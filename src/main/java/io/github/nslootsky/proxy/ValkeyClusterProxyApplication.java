@@ -14,6 +14,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
+/**
+ * Spring Boot application that runs a RESP proxy in front of a Valkey cluster.
+ * Exposes the cluster as a single-connection endpoint for non-cluster-aware clients.
+ */
 @SpringBootApplication
 @EnableConfigurationProperties(ProxyProperties.class)
 public class ValkeyClusterProxyApplication {

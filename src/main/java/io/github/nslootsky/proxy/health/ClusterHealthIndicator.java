@@ -10,6 +10,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * Spring Boot health indicator that pings the Valkey cluster.
+ * Reports UP if reachable, DOWN with error details otherwise.
+ */
 @Component
 public class ClusterHealthIndicator implements HealthIndicator {
 

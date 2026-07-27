@@ -16,6 +16,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Fallback handler for unregistered commands. Forwards via Glide's customCommand().
+ * Queues commands during MULTI/EXEC.
+ */
 public class CatchAllCommand implements RespCommand {
 
     private static final Logger log = LoggerFactory.getLogger(CatchAllCommand.class);

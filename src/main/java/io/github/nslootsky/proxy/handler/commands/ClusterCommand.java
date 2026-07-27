@@ -8,6 +8,10 @@ import com.github.tonivade.resp.protocol.RedisToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * CLUSTER command handler. Returns standalone-compatible errors for INFO/NODES
+ * to mimic real standalone server behavior.
+ */
 @Command("cluster")
 @ParamLength(value = 1, option = 10)
 public class ClusterCommand implements RespCommand {

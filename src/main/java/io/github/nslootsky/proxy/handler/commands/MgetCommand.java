@@ -14,6 +14,9 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * MGET command handler. Retrieves values for multiple keys across slots.
+ */
 @Command("mget")
 @ParamLength(value = 1, option = 1000)
 public class MgetCommand implements RespCommand {

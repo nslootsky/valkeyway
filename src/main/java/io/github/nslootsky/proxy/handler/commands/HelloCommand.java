@@ -16,6 +16,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * HELLO command handler. Overrides mode to "standalone" for Glide compatibility.
+ */
 public class HelloCommand implements RespCommand {
 
     private static final Logger log = LoggerFactory.getLogger(HelloCommand.class);

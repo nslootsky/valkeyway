@@ -17,6 +17,10 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Manages GlideClusterClient instances per database index.
+ * Clients are cached with 30s expiry and closed automatically on eviction.
+ */
 @Component
 public class GlideClientCache {
 
@@ -61,6 +65,9 @@ public class GlideClientCache {
         return builder.build();
     }
 
+    /**
+     * Get or create a GlideClusterClient for the given database index.
+     */
     public GlideClusterClient getClient(int db) {
         return cache.get(db, key -> {
             try {

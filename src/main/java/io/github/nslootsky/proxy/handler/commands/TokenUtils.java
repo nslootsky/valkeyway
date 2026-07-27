@@ -7,6 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Utilities for converting Glide results to RedisToken and cleaning error messages.
+ */
 public class TokenUtils {
 
     private TokenUtils() {}

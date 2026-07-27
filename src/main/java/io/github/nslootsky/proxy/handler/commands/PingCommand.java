@@ -10,6 +10,9 @@ import io.github.nslootsky.proxy.handler.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * PING command handler. Supports optional message argument.
+ */
 @Command("ping")
 public class PingCommand implements RespCommand {
 

@@ -7,6 +7,10 @@ import io.github.nslootsky.proxy.handler.commands.*;
 import io.github.nslootsky.proxy.metrics.MetricsCollector;
 import io.github.nslootsky.proxy.scan.ScanCursorStore;
 
+/**
+ * Command router for the proxy. Registers named handlers for supported commands
+ * and falls back to CatchAllCommand for all others.
+ */
 public class ProxyCommandSuite extends CommandSuite {
 
     private final GlideClientCache glideClientCache;

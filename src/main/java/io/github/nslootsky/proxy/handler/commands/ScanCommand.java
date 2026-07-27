@@ -14,6 +14,10 @@ import io.github.nslootsky.proxy.scan.ScanCursorStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * SCAN command handler. Iterates across all cluster nodes.
+ * Cursors are UUIDs during iteration, "0" on completion.
+ */
 @Command("scan")
 @ParamLength(value = 1, option = 10)
 public class ScanCommand implements RespCommand {

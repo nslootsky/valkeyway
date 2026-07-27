@@ -14,6 +14,9 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * UNLINK command handler. Asynchronously deletes keys across multiple slots.
+ */
 @Command("unlink")
 @ParamLength(value = 1, option = 1000)
 public class UnlinkCommand implements RespCommand {

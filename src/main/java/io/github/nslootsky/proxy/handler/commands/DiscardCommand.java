@@ -8,6 +8,9 @@ import io.github.nslootsky.proxy.handler.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * DISCARD command handler. Aborts the current transaction.
+ */
 @Command("discard")
 public class DiscardCommand implements RespCommand {
 

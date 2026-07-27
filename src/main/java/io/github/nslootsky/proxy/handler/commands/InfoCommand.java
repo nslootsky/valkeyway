@@ -7,6 +7,10 @@ import io.github.nslootsky.proxy.metrics.MetricsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * INFO command handler. Returns proxy-specific info with role:master
+ * to be compatible with Glide's STANDARD mode detection.
+ */
 public class InfoCommand implements RespCommand {
 
     private static final Logger log = LoggerFactory.getLogger(InfoCommand.class);

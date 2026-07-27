@@ -14,6 +14,10 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * PROXY admin command handler. Supports subcommands: CLUSTER INFO, CONFIG GET/SET,
+ * STATS, FLUSHCLIENTS, CLIENTINFO.
+ */
 @Command("proxy")
 @ParamLength(value = 1, option = 10)
 public class ProxyAdminCommand implements RespCommand {

@@ -14,6 +14,10 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * EXEC command handler. Executes queued transaction commands.
+ * Uses ClusterBatch(true) for single-slot, ClusterBatch(false) for cross-slot.
+ */
 @Command("exec")
 public class ExecCommand implements RespCommand {
 

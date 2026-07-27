@@ -4,6 +4,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
 
+/**
+ * Configuration properties for the proxy.
+ * Prefix: proxy.*
+ */
 @ConfigurationProperties(prefix = "proxy")
 public record ProxyProperties(
     String host,

@@ -5,6 +5,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Shared store for SCAN cursors, keyed by UUID.
+ * Persists cursors across connections for cluster-wide SCAN iteration.
+ */
 public class ScanCursorStore {
 
     private final Map<String, ClusterScanCursor> cursors = new ConcurrentHashMap<>();

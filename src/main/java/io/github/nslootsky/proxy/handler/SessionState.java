@@ -9,6 +9,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Utility for managing per-session state stored in the resp-server Session object.
+ * Tracks current DB, Glide client, transaction state, and scan cursor.
+ */
 public class SessionState {
 
     private static final String CURRENT_DB = "currentDb";

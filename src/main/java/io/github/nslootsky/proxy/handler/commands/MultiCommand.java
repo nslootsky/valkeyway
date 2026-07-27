@@ -8,6 +8,9 @@ import io.github.nslootsky.proxy.handler.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * MULTI command handler. Begins a transaction; subsequent commands are queued.
+ */
 @Command("multi")
 public class MultiCommand implements RespCommand {
 

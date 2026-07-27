@@ -14,6 +14,9 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * DEL command handler. Deletes keys across multiple slots using Glide's typed API.
+ */
 @Command("del")
 @ParamLength(value = 1, option = 1000)
 public class DelCommand implements RespCommand {

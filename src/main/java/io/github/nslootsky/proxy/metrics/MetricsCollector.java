@@ -5,6 +5,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
+/**
+ * Micrometer-based metrics tracking: commands processed (by type), errors, and latency.
+ * Exposed via Spring Boot Actuator endpoints.
+ */
 @Component
 public class MetricsCollector {
 

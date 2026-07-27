@@ -10,6 +10,9 @@ import io.github.nslootsky.proxy.handler.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * TIME command handler. Returns current server time as Unix timestamp and microseconds.
+ */
 @Command("time")
 public class TimeCommand implements RespCommand {
 

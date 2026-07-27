@@ -10,6 +10,10 @@ import io.github.nslootsky.proxy.handler.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * SELECT command handler. Switches the session to the specified database index.
+ * Not allowed inside MULTI/EXEC.
+ */
 @Command("select")
 public class SelectCommand implements RespCommand {
 
