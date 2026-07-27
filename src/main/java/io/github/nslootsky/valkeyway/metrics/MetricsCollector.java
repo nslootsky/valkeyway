@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Nick Slootsky
+ * Licensed under the MIT License. See LICENSE file.
+ */
+
 package io.github.nslootsky.valkeyway.metrics;
 
 import io.micrometer.core.instrument.Counter;

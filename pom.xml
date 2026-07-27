@@ -14,8 +14,9 @@
     <groupId>io.github.nslootsky.valkeyway</groupId>
     <artifactId>valkeyway</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>Valkey Cluster Proxy</name>
-    <description>RESP proxy from non-cluster-aware clients to Valkey/Redis cluster</description>
+    <name>ValkeyWay</name>
+    <description>RESP proxy from non-cluster-aware clients to Valkey cluster — supports cross-slot commands, multi-DB, and transactions</description>
+    <url>https://github.com/nslootsky/valkeyway</url>
 
     <properties>
         <java.version>25</java.version>
