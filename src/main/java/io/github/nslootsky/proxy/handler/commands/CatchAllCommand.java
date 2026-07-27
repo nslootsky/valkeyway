@@ -100,7 +100,11 @@ public class CatchAllCommand implements RespCommand {
         try {
             GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
             ClusterValue<Object> result = client.customCommand(cmdArgs).get();
-            log.debug("OK {} result={}", cmdArgs[0], TokenUtils.summarize(result));
+            Object singleValue = result.hasSingleData() ? result.getSingleValue() : null;
+            Object multiValue = result.hasMultiData() ? result.getMultiValue() : null;
+            log.debug("OK {} result={}, hasSingle={}, hasMulti={}, singleValue={}, multiValue={}",
+                    cmdArgs[0], TokenUtils.summarize(result),
+                    result.hasSingleData(), result.hasMultiData(), singleValue, multiValue);
             return TokenUtils.toRedisToken(result);
         } catch (Exception e) {
             log.error("ERR {} error={}", cmdArgs[0], e.getMessage());

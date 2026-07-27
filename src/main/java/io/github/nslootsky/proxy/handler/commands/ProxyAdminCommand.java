@@ -46,6 +46,10 @@ public class ProxyAdminCommand implements RespCommand {
             return handleProxyConfig(request);
         } else if ("STATS".equals(subCmd)) {
             return handleProxyStats();
+        } else if ("FLUSHCLIENTS".equals(subCmd)) {
+            return handleProxyFlushClients();
+        } else if ("CLIENTINFO".equals(subCmd) && request.getLength() >= 2) {
+            return handleProxyClientInfo(request);
         } else {
             return RedisToken.error("ERR unknown proxy subcommand");
         }
@@ -99,5 +103,20 @@ public class ProxyAdminCommand implements RespCommand {
                 proxy_uptime: running\r
                 """;
         return RedisToken.string(stats);
+    }
+
+    private RedisToken handleProxyFlushClients() {
+        try {
+            glideClientCache.closeAll();
+            return RedisToken.status("Flushed all clients");
+        } catch (Exception e) {
+            log.error("PROXY FLUSHCLIENTS ERR {}", e.getMessage());
+            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
+        }
+    }
+
+    private RedisToken handleProxyClientInfo(Request request) {
+        String clientId = request.getParam(1).toString();
+        return RedisToken.string("Client " + clientId + " info");
     }
 }

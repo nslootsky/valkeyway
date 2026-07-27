@@ -31,7 +31,7 @@ public class ScanCommand implements RespCommand {
     @Override
     public RedisToken execute(Request request) {
         var session = request.getSession();
-        if (request.getLength() < 2) {
+        if (request.getLength() < 1) {
             return RedisToken.error("ERR wrong number of arguments for 'scan' command");
         }
 

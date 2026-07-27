@@ -22,13 +22,14 @@ public class ProxyCommandSuite extends CommandSuite {
         addCommand("exec", new ExecCommand(glideClientCache));
         addCommand("discard", new DiscardCommand());
         addCommand("ping", new PingCommand(glideClientCache));
-        addCommand("info", new InfoCommand(glideClientCache));
         addCommand("time", new TimeCommand(glideClientCache));
         addCommand("del", new DelCommand(glideClientCache));
         addCommand("unlink", new UnlinkCommand(glideClientCache));
         addCommand("mget", new MgetCommand(glideClientCache));
         addCommand("scan", new ScanCommand(glideClientCache, scanCursorStore));
         addCommand("proxy", new ProxyAdminCommand(glideClientCache));
+        addCommand("hello", new HelloCommand(glideClientCache, metrics));
+        addCommand("info", new InfoCommand(glideClientCache, metrics));
     }
 
     @Override

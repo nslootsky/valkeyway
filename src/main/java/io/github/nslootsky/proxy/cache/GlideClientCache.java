@@ -64,7 +64,7 @@ public class GlideClientCache {
     public GlideClusterClient getClient(int db) {
         return cache.get(db, key -> {
             try {
-                GlideClusterClient client = GlideClusterClient.createClient(buildConfig(db)).get();
+                GlideClusterClient client = GlideClusterClient.createClient(buildConfig(db)).get(10, TimeUnit.SECONDS);
                 log.info("Created GlideClusterClient for db={}", db);
                 return client;
             } catch (Exception e) {
@@ -73,8 +73,12 @@ public class GlideClientCache {
         });
     }
 
+    public int getActiveClients() {
+        return (int) cache.estimatedSize();
+    }
+
     @PreDestroy
-    void closeAll() {
+    public void closeAll() {
         cache.invalidateAll();
         log.info("Closed all GlideClusterClient instances");
     }

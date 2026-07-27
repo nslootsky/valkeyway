@@ -37,15 +37,15 @@ public class TokenUtils {
     }
 
     public static RedisToken toRedisToken(ClusterValue<Object> clusterValue) {
+        if (clusterValue == null) {
+            return RedisToken.nullString();
+        }
         if (clusterValue.hasSingleData()) {
-            return toRedisToken(clusterValue.getSingleValue());
+            Object val = clusterValue.getSingleValue();
+            return toRedisToken(val);
         } else if (clusterValue.hasMultiData()) {
             Map<String, Object> multiValue = clusterValue.getMultiValue();
-            StringBuilder sb = new StringBuilder();
-            for (Object val : multiValue.values()) {
-                sb.append(val);
-            }
-            return RedisToken.string(sb.toString());
+            return toRedisToken(multiValue);
         }
         return RedisToken.nullString();
     }
@@ -54,15 +54,16 @@ public class TokenUtils {
         return switch (value) {
             case null -> RedisToken.nullString();
             case String s -> RedisToken.string(s);
-            case Number n -> RedisToken.string(n.toString());
+            case Number n -> RedisToken.integer(n.intValue());
             case Boolean b -> RedisToken.integer(b ? 1 : 0);
             case Object[] arr -> toRedisArray(arr);
             case Map<?, ?> map -> {
-                StringBuilder sb = new StringBuilder();
+                List<RedisToken> tokens = new ArrayList<>();
                 for (Map.Entry<?, ?> entry : map.entrySet()) {
-                    sb.append(entry.getKey()).append(": ").append(entry.getValue()).append("\r\n");
+                    tokens.add(toRedisToken(entry.getKey()));
+                    tokens.add(toRedisToken(entry.getValue()));
                 }
-                yield RedisToken.string(sb.toString());
+                yield RedisToken.array(tokens);
             }
             default -> RedisToken.string(value.toString());
         };

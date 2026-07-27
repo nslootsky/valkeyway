@@ -50,4 +50,12 @@ public class MetricsCollector {
     public void stopTimer(Timer.Sample sample) {
         sample.stop(commandLatency);
     }
+
+    public double getTotalCommands() {
+        return commandsProcessed.count();
+    }
+
+    public double getTotalErrors() {
+        return errors.count();
+    }
 }
