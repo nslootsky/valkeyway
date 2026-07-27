@@ -1,0 +1,103 @@
+package io.github.nslootsky.proxy.handler.commands;
+
+import com.github.tonivade.resp.annotation.Command;
+import com.github.tonivade.resp.annotation.ParamLength;
+import com.github.tonivade.resp.command.Request;
+import com.github.tonivade.resp.command.RespCommand;
+import com.github.tonivade.resp.protocol.RedisToken;
+import glide.api.GlideClusterClient;
+import io.github.nslootsky.proxy.cache.GlideClientCache;
+import io.github.nslootsky.proxy.handler.SessionState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Command("proxy")
+@ParamLength(value = 1, option = 10)
+public class ProxyAdminCommand implements RespCommand {
+
+    private static final Logger log = LoggerFactory.getLogger(ProxyAdminCommand.class);
+
+    private final GlideClientCache glideClientCache;
+
+    private static final Map<String, String> proxyConfig = new ConcurrentHashMap<>();
+    private static final Map<String, String> defaultConfig = Map.of(
+            "cluster_slots", "16384",
+            "proxy_port", "6379"
+    );
+
+    public ProxyAdminCommand(GlideClientCache glideClientCache) {
+        this.glideClientCache = glideClientCache;
+    }
+
+    @Override
+    public RedisToken execute(Request request) {
+        if (request.getLength() < 1) {
+            return RedisToken.error("ERR wrong number of arguments for 'proxy' command");
+        }
+
+        String subCmd = request.getParam(0).toString().toUpperCase();
+
+        if ("CLUSTER".equals(subCmd) && request.getLength() >= 2 && "INFO".equalsIgnoreCase(request.getParam(1).toString())) {
+            return handleProxyClusterInfo(request);
+        } else if ("CONFIG".equals(subCmd) && request.getLength() >= 2) {
+            return handleProxyConfig(request);
+        } else if ("STATS".equals(subCmd)) {
+            return handleProxyStats();
+        } else {
+            return RedisToken.error("ERR unknown proxy subcommand");
+        }
+    }
+
+    private RedisToken handleProxyClusterInfo(Request request) {
+        try {
+            GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
+            return RedisToken.string(client.clusterInfo().get());
+        } catch (Exception e) {
+            log.error("PROXY CLUSTER INFO ERR {}", e.getMessage());
+            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
+        }
+    }
+
+    private RedisToken handleProxyConfig(Request request) {
+        if (request.getLength() < 3) {
+            return RedisToken.error("ERR wrong number of arguments for 'proxy config' command");
+        }
+        String action = request.getParam(1).toString().toUpperCase();
+        String key = request.getParam(2).toString();
+
+        if ("GET".equals(action)) {
+            String value = getProxyConfig(key);
+            if (value != null) {
+                return RedisToken.array(RedisToken.string(key), RedisToken.string(value));
+            } else {
+                return RedisToken.array();
+            }
+        } else if ("SET".equals(action) && request.getLength() >= 4) {
+            String value = request.getParam(3).toString();
+            setProxyConfig(key, value);
+            return RedisToken.status("OK");
+        } else {
+            return RedisToken.error("ERR wrong number of arguments for 'proxy config' command");
+        }
+    }
+
+    private String getProxyConfig(String key) {
+        return proxyConfig.getOrDefault(key, defaultConfig.get(key));
+    }
+
+    private void setProxyConfig(String key, String value) {
+        proxyConfig.put(key, value);
+    }
+
+    private RedisToken handleProxyStats() {
+        String stats = """
+                cluster_nodes: 6\r
+                cluster_state: ok\r
+                proxy_uptime: running\r
+                """;
+        return RedisToken.string(stats);
+    }
+}

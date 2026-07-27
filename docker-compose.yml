@@ -1,0 +1,23 @@
+services:
+  valkey-0:
+    image: valkey/valkey:9.1.1-alpine
+    command: valkey-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --port 7000 --bind 0.0.0.0
+    ports: ["7000:7000"]
+
+  valkey-1:
+    image: valkey/valkey:9.1.1-alpine
+    command: valkey-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --port 7001 --bind 0.0.0.0
+    ports: ["7001:7001"]
+
+  valkey-2:
+    image: valkey/valkey:9.1.1-alpine
+    command: valkey-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --port 7002 --bind 0.0.0.0
+    ports: ["7002:7002"]
+
+  proxy:
+    build: .
+    ports: ["6379:6379"]
+    depends_on: [valkey-0, valkey-1, valkey-2]
+    command: >
+      java -jar /app/valkey-cluster-proxy-0.1.0-SNAPSHOT.jar
+      --proxy.cluster-nodes=valkey-0:7000,valkey-1:7001,valkey-2:7002

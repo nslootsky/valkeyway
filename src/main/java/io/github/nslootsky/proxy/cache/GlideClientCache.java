@@ -1,0 +1,81 @@
+package io.github.nslootsky.proxy.cache;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Scheduler;
+import glide.api.GlideClusterClient;
+import glide.api.models.configuration.GlideClusterClientConfiguration;
+import glide.api.models.configuration.NodeAddress;
+import io.github.nslootsky.proxy.ProxyProperties;
+import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+@Component
+public class GlideClientCache {
+
+    private static final Logger log = LoggerFactory.getLogger(GlideClientCache.class);
+
+    private final Cache<Integer, GlideClusterClient> cache;
+    private final List<String> clusterNodes;
+    private final int requestTimeout;
+
+    public GlideClientCache(ProxyProperties props) {
+        this.clusterNodes = props.clusterNodes();
+        this.requestTimeout = (int) props.connectTimeoutMs();
+
+        this.cache = Caffeine.newBuilder()
+                .expireAfterAccess(30, TimeUnit.SECONDS)
+                .scheduler(Scheduler.systemScheduler())
+                .executor(Executors.newSingleThreadExecutor())
+                .removalListener((db, client, cause) -> {
+                    try {
+                        ((GlideClusterClient) Objects.requireNonNull(client)).close();
+                        log.info("Closed GlideClusterClient for db={}", db);
+                    } catch (Exception e) {
+                        log.error("Error closing GlideClusterClient for db={}", db, e);
+                    }
+                })
+                .build();
+    }
+
+    private GlideClusterClientConfiguration buildConfig(int db) {
+        var builder = GlideClusterClientConfiguration.builder()
+                .requestTimeout(requestTimeout)
+                .databaseId(db);
+
+        for (String node : clusterNodes) {
+            String[] parts = node.split(":");
+            builder.address(NodeAddress.builder()
+                    .host(parts[0])
+                    .port(Integer.parseInt(parts[1]))
+                    .build());
+        }
+
+        return builder.build();
+    }
+
+    public GlideClusterClient getClient(int db) {
+        return cache.get(db, key -> {
+            try {
+                GlideClusterClient client = GlideClusterClient.createClient(buildConfig(db)).get();
+                log.info("Created GlideClusterClient for db={}", db);
+                return client;
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create GlideClusterClient for db=" + db, e);
+            }
+        });
+    }
+
+    @PreDestroy
+    void closeAll() {
+        cache.invalidateAll();
+        log.info("Closed all GlideClusterClient instances");
+    }
+}
