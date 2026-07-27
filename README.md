@@ -1,5 +1,8 @@
 # Valkey Cluster Proxy
 
+[![CI](https://github.com/nslootsky/valkey-cluster-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/nslootsky/valkey-cluster-proxy/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A Java 25 + Spring Boot 4.1 proxy that exposes a Valkey/Redis cluster as a single-connection endpoint for non-cluster-aware clients.
 
 The proxy uses the [valkey-glide](https://github.com/valkey-io/valkey-glide) client library to handle all cluster complexity: routing, MOVED/ASK redirects, multi-slot command splitting, and connection pooling. The proxy itself handles RESP protocol translation via the [resp-server](https://github.com/tonivade/resp-server) library.
@@ -175,6 +178,12 @@ java -jar valkey-cluster-proxy-0.1.0-SNAPSHOT.jar \
 # Build
 ./mvnw package -DskipTests
 
+# Run unit tests (no Docker required)
+./mvnw test
+
+# Run integration tests (requires Docker/Podman)
+./mvnw verify -Dskip.integration.tests=false
+
 # Run locally (with cluster on ports 7000-7005)
 java -jar target/valkey-cluster-proxy-0.1.0-SNAPSHOT.jar
 
@@ -238,7 +247,7 @@ All other Valkey commands are forwarded via `customCommand()`. glide routes sing
 
 ## Limitations
 
-- RESP2 only (no RESP3)
+- SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error

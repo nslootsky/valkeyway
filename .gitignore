@@ -1,4 +1,27 @@
+# Maven
 target/
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/.cache/
+
+# IDE
 .idea/
 *.iml
-.mvn/.cache/
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary
+tmp/
+temp/
+
+# Testcontainers
+test-*.log
