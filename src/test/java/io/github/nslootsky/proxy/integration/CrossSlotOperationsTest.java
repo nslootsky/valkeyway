@@ -42,6 +42,33 @@ class CrossSlotOperationsTest extends IntegrationTestBase {
 
     @Test
     @Order(2)
+    void unlinkCrossSlot() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            String[] keys = {
+                "cache:session:1001",
+                "cache:user:2002",
+                "cache:token:3003",
+                "cache:device:4004",
+                "cache:ip:5005",
+                "cache:request:6006",
+                "cache:response:7007",
+                "cache:header:8008"
+            };
+
+            for (String key : keys) {
+                assertEquals("OK", client.set(key, "val"));
+            }
+
+            assertEquals(keys.length, client.unlink(keys));
+
+            for (String key : keys) {
+                assertNull(client.get(key), "Key " + key + " should be unlinked");
+            }
+        }
+    }
+
+    @Test
+    @Order(3)
     void delCrossSlot() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             String[] keys = {

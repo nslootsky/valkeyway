@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 
 public class ValkeyClusterTestContainer implements AutoCloseable {
 
-    private static final DockerImageName VALKEY_IMAGE = DockerImageName.parse("valkey/valkey:9-alpine");
+    private static final DockerImageName VALKEY_IMAGE = DockerImageName.parse("valkey/valkey:9.1.1-alpine");
 
     private final List<GenericContainer<?>> nodes = new ArrayList<>();
     private final List<String> addresses = new ArrayList<>();

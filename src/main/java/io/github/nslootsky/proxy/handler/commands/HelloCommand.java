@@ -36,17 +36,19 @@ public class HelloCommand implements RespCommand {
             argsList.add(param.toString());
         }
         String[] cmdArgs = argsList.toArray(new String[0]);
+        log.debug("HELLO args={}", argsList);
         try {
             GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
             ClusterValue<Object> result = client.customCommand(cmdArgs).get();
             if (result.hasMultiData()) {
                 Map<String, Object> multiValue = new HashMap<>(result.getMultiValue());
                 multiValue.put("mode", "standalone");
+                log.debug("HELLO OK mode=standalone");
                 return TokenUtils.toRedisToken(multiValue);
             }
             return TokenUtils.toRedisToken(result);
         } catch (Exception e) {
-            log.error("HELLO command failed", e);
+            log.error("HELLO ERR {}", e.getMessage());
             return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
         }
     }

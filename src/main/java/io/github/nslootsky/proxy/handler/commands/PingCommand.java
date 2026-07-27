@@ -7,9 +7,13 @@ import com.github.tonivade.resp.protocol.RedisToken;
 import glide.api.GlideClusterClient;
 import io.github.nslootsky.proxy.cache.GlideClientCache;
 import io.github.nslootsky.proxy.handler.SessionState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Command("ping")
 public class PingCommand implements RespCommand {
+
+    private static final Logger log = LoggerFactory.getLogger(PingCommand.class);
 
     private final GlideClientCache glideClientCache;
 
@@ -21,12 +25,13 @@ public class PingCommand implements RespCommand {
     public RedisToken execute(Request request) {
         try {
             GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
-            if (request.getLength() > 1) {
-                return RedisToken.string(client.ping(request.getParam(0).toString()).get());
-            } else {
-                return RedisToken.string(client.ping().get());
-            }
+            String msg = request.getLength() > 0 ? request.getParam(0).toString() : null;
+            log.debug("PING msg={}", msg);
+            String result = msg != null ? client.ping(msg).get() : client.ping().get();
+            log.debug("PING OK result={}", result);
+            return RedisToken.string(result);
         } catch (Exception e) {
+            log.error("PING ERR {}", e.getMessage());
             return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
         }
     }

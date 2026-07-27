@@ -17,16 +17,19 @@ public class ClusterCommand implements RespCommand {
     @Override
     public RedisToken execute(Request request) {
         if (request.getLength() < 1) {
+            log.debug("CLUSTER ERR wrong number of arguments");
             return RedisToken.error("ERR wrong number of arguments for 'cluster' command");
         }
 
         String subCmd = request.getParam(0).toString().toUpperCase();
+        log.debug("CLUSTER subCmd={}", subCmd);
 
         if ("INFO".equals(subCmd)) {
             return handleClusterInfo();
         } else if ("NODES".equals(subCmd)) {
             return handleClusterNodes();
         } else {
+            log.debug("CLUSTER ERR unknown subcommand={}", subCmd);
             return RedisToken.error("ERR unknown cluster subcommand '" + subCmd + "'");
         }
     }

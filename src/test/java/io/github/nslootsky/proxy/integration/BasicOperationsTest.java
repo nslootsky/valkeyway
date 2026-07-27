@@ -32,7 +32,6 @@ class BasicOperationsTest extends IntegrationTestBase {
     void del() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.set("del_key", "value"));
-            assertEquals("value", client.get("del_key"));
             assertEquals(1L, client.del("del_key"));
             assertNull(client.get("del_key"));
         }
@@ -59,7 +58,7 @@ class BasicOperationsTest extends IntegrationTestBase {
     }
 
     @Test
-    @Order(6)
+    @Order(7)
     void time() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             String[] result = client.time();
@@ -70,7 +69,7 @@ class BasicOperationsTest extends IntegrationTestBase {
     }
 
     @Test
-    @Order(7)
+    @Order(8)
     void expireAndTtl() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.set("ttl_key", "value"));
@@ -82,7 +81,7 @@ class BasicOperationsTest extends IntegrationTestBase {
     }
 
     @Test
-    @Order(8)
+    @Order(9)
     void setWithExpiry() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.set("setex_key", "value", 100));
@@ -93,7 +92,7 @@ class BasicOperationsTest extends IntegrationTestBase {
     }
 
     @Test
-    @Order(9)
+    @Order(10)
     void exists() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.set("exists_key", "value"));

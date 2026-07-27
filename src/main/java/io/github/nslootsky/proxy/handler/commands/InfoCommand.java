@@ -19,10 +19,12 @@ public class InfoCommand implements RespCommand {
 
     @Override
     public RedisToken execute(Request request) {
+        String section = request.getLength() > 0 ? request.getParam(0).toString().toUpperCase() : "ALL";
+        log.debug("INFO section={}", section);
         try {
             return handleInfo();
         } catch (Exception e) {
-            log.error("INFO command failed", e);
+            log.error("INFO ERR {}", e.getMessage());
             return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
         }
     }
