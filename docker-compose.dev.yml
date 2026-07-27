@@ -1,0 +1,56 @@
+services:
+  valkey-0:
+    image: valkey/valkey:9.1.1-alpine
+    command: valkey-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --port 7000 --bind 0.0.0.0 --cluster-databases 16
+    ports:
+      - "7000:7000"
+    networks:
+      - valkey-net
+
+  valkey-1:
+    image: valkey/valkey:9.1.1-alpine
+    command: valkey-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --port 7001 --bind 0.0.0.0 --cluster-databases 16
+    ports:
+      - "7001:7001"
+    networks:
+      - valkey-net
+
+  valkey-2:
+    image: valkey/valkey:9.1.1-alpine
+    command: valkey-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --port 7002 --bind 0.0.0.0 --cluster-databases 16
+    ports:
+      - "7002:7002"
+    networks:
+      - valkey-net
+
+  cluster-setup:
+    image: valkey/valkey:9.1.1-alpine
+    depends_on:
+      - valkey-0
+      - valkey-1
+      - valkey-2
+    entrypoint: >
+      sh -c "
+        sleep 3 &&
+        valkey-cli --cluster create valkey-0:7000 valkey-1:7001 valkey-2:7002 --cluster-replicas 0 --cluster-yes
+      "
+    networks:
+      - valkey-net
+
+  proxy:
+    build: .
+    ports:
+      - "6379:6379"
+      - "6380:6380"
+    depends_on:
+      cluster-setup:
+        condition: service_completed_successfully
+    command: >
+      java -jar /app/app.jar
+      --proxy.cluster-nodes=valkey-0:7000,valkey-1:7001,valkey-2:7002
+    networks:
+      - valkey-net
+
+networks:
+  valkey-net:
+    driver: bridge
