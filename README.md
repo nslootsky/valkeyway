@@ -1,11 +1,37 @@
-# Valkey Cluster Proxy
+# ValkeyWay
 
-[![CI](https://github.com/nslootsky/valkey-cluster-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/nslootsky/valkey-cluster-proxy/actions/workflows/ci.yml)
+[![CI](https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml/badge.svg)](https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Java 25 + Spring Boot 4.1 proxy that exposes a Valkey/Redis cluster as a single-connection endpoint for non-cluster-aware clients.
+A RESP proxy that presents a Valkey cluster as a single-connection endpoint.
 
-The proxy uses the [valkey-glide](https://github.com/valkey-io/valkey-glide) client library to handle all cluster complexity: routing, MOVED/ASK redirects, multi-slot command splitting, and connection pooling. The proxy itself handles RESP protocol translation via the [resp-server](https://github.com/tonivade/resp-server) library.
+ValkeyWay is a Java 25 + Spring Boot proxy that sits between non-cluster-aware clients and a Valkey/Redis cluster. It uses [valkey-glide](https://github.com/valkey-io/valkey-glide) for cluster routing, MOVED/ASK handling, and multi-slot command splitting, and [resp-server](https://github.com/tonivade/resp-server) for the client-facing RESP protocol.
+
+Clients connect to ValkeyWay on port 6379 and interact with the cluster as if it were a standalone server.
+
+## Quick Start
+
+```bash
+# Docker
+docker run -d --name valkeyway \
+  -p 6379:6379 -p 6380:6380 \
+  nslootsky/valkeyway:latest \
+  --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+
+# Clients connect to localhost:6379
+valkey-cli SET mykey hello
+valkey-cli GET mykey
+# → "hello"
+```
+
+## Features
+
+- Cross-slot commands: DEL, MGET, UNLINK split and aggregate automatically
+- Multi-DB support: SELECT with per-connection state (Valkey 9+ cluster mode)
+- Transactions: MULTI/EXEC with single-slot atomicity or per-slot cross-slot execution
+- Cluster-wide SCAN with cursor persistence across connections
+- Standalone-compatible responses for HELLO and CLUSTER INFO
+- Health checks, metrics, and Prometheus via Spring Boot Actuator on port 6380
 
 ## Architecture
 
@@ -15,7 +41,7 @@ Client (non-cluster-aware)
          │ RESP commands (GET, SET, SELECT, etc.)
          ▼
 ┌──────────────────────────────────────┐
-│  Valkey Cluster Proxy :6379          │
+│  ValkeyWay :6379                     │
 │                                      │
 │  resp-server library                 │
 │    ├─ RESP server (Netty-based)      │
@@ -25,12 +51,10 @@ Client (non-cluster-aware)
 │    ├─ ProxyCommandSuite              │
 │    │   ├─ SelectCommand              │
 │    │   ├─ MultiCommand / ExecCommand │
-│    │   │   └─ ClusterBatch           │
 │    │   ├─ DelCommand / UnlinkCommand │
 │    │   ├─ MgetCommand                │
 │    │   ├─ ScanCommand                │
 │    │   ├─ PingCommand / InfoCommand  │
-│    │   ├─ TimeCommand                │
 │    │   ├─ HelloCommand               │
 │    │   ├─ ClusterCommand             │
 │    │   ├─ ProxyAdminCommand          │
@@ -38,12 +62,7 @@ Client (non-cluster-aware)
 │    │       └─ customCommand()        │
 │    │                                 │
 │    ├─ SessionState (per-session)     │
-│    │   ├─ currentDB                  │
-│    │   ├─ glideClient                │
-│    │   ├─ transaction state          │
-│    │   └─ scan cursor ID             │
-│    │                                 │
-│    ├─ ScanCursorStore (shared)       │
+│    ├─ ScanCursorStore (TTL + max)    │
 │    ├─ GlideClientCache               │
 │    ├─ MetricsCollector               │
 │    └─ ClusterHealthIndicator         │
@@ -63,83 +82,6 @@ Client (non-cluster-aware)
 │ slots    │ │ slots    │ │ slots    │
 └──────────┘ └──────────┘ └──────────┘
 ```
-
-### Components
-
-- **resp-server library**: Provides the RESP2 server, protocol parsing, command routing, and session management. The proxy extends `CommandSuite` and implements `RespCommand` handlers.
-
-- **ProxyCommandSuite** (`handler/ProxyCommandSuite.java`): Command router extending `CommandSuite`. Registers named command handlers and returns `CatchAllCommand` for unregistered commands.
-
-- **Command Handlers** (`handler/commands/*.java`): Individual `RespCommand` implementations:
-  - `SelectCommand` — SELECT with DB isolation via `GlideClientCache`
-  - `MultiCommand` / `ExecCommand` — MULTI/EXEC with `ClusterBatch`
-  - `DiscardCommand` — aborts transaction
-  - `DelCommand` / `UnlinkCommand` — multi-slot deletion via glide typed APIs
-  - `MgetCommand` — multi-slot reads via glide typed APIs
-  - `ScanCommand` — cluster-wide SCAN with `ClusterScanCursor`
-  - `PingCommand` / `InfoCommand` / `TimeCommand` — standard commands
-  - `ProxyAdminCommand` — PROXY admin subcommands
-  - `CatchAllCommand` — pass-through via `customCommand()`; queues commands in transactions
-
-- **SessionState** (`handler/SessionState.java`): Utility for managing per-session state stored in the resp-server library's `Session` object: current DB, glide client reference, transaction state (commands, slots), and scan cursor ID.
-
-- **ScanCursorStore** (`scan/ScanCursorStore.java`): Shared `ConcurrentHashMap<String, ClusterScanCursor>` keyed by UUID. Persists SCAN cursors across connections since each valkey-cli SCAN call is a new TCP connection.
-
-- **GlideClientCache** (Spring bean): Manages `GlideClusterClient` instances per database index. Each client is configured with a `databaseId`. Initialized lazily on first use; cached with 30-second expiry.
-
-- **TokenUtils** (`handler/commands/TokenUtils.java`): Shared utilities for converting glide results to `RedisToken` and cleaning error messages.
-
-- **MetricsCollector** (`metrics/MetricsCollector.java`): Micrometer-based metrics tracking: commands processed (by type), errors, and command latency. Exposed via actuator endpoints.
-
-- **ClusterHealthIndicator** (`health/ClusterHealthIndicator.java`): Spring Boot health indicator that pings the cluster. Reports UP if reachable, DOWN with error details otherwise.
-
-## How It Works
-
-### Command Routing
-
-`ProxyCommandSuite.getCommand(name)` looks up registered handlers by command name. Registered commands use typed glide APIs; all others fall through to `CatchAllCommand`, which uses `customCommand()`. glide routes single-key commands to the correct node based on the key's slot. No manual topology tracking or MOVED handling required.
-
-### Multi-Key Commands (DEL, MGET)
-
-glide's typed APIs (`del(keys)`, `mget(keys)`) automatically split keys by slot and aggregate results:
-- `DEL key1 key2 key3` across 3 slots → glide sends to each node, returns total deleted count
-- `MGET key1 key2 key3` across 3 slots → glide sends to each node, returns values in original key order
-
-### Transactions (MULTI/EXEC)
-
-`MultiCommand` sets transaction state in `SessionState`. Subsequent commands are queued by `CatchAllCommand` into per-session buffers. On EXEC:
-- If all keys map to the same slot: `ClusterBatch(true)` (atomic, single-node)
-- If keys span multiple slots: `ClusterBatch(false)` (per-slot atomicity, not global)
-
-Slots are tracked via `key.hashCode() & 0x3FFF` in `SessionState`.
-
-### Cluster-Wide SCAN
-
-SCAN iterates across all cluster nodes using glide's `ClusterScanCursor`:
-
-1. Client sends `SCAN 0 MATCH pattern COUNT n`
-2. Handler creates `ClusterScanCursor.initialCursor()`, calls `glideClient.scan()`
-3. glide returns keys from first node + new cursor
-4. Handler stores cursor in `ScanCursorStore` with a UUID, returns UUID to client as cursor value
-5. Client sends `SCAN <uuid> MATCH pattern COUNT n` on next iteration
-6. Handler retrieves cursor from store, resumes scan
-7. When cursor is finished, returns `"0"` cursor (standard RESP convention)
-
-This allows SCAN to work correctly even though each valkey-cli invocation is a separate TCP connection.
-
-### SELECT (Multi-DB)
-
-`SelectCommand` tracks the current DB in `SessionState` and creates or reuses a `GlideClusterClient` from `GlideClientCache` configured with that `databaseId`. Each DB index gets its own client instance, providing basic DB isolation per connection.
-
-### PROXY Admin Commands
-
-Custom admin commands for proxy management:
-- `PROXY CLUSTER INFO` — delegates to `CLUSTER INFO`
-- `PROXY CONFIG GET <key>` — returns proxy config value (from in-memory store or defaults)
-- `PROXY CONFIG SET <key> <value>` — sets in-memory config
-- `PROXY STATS` — returns basic cluster stats
-- `PROXY FLUSHCLIENTS` — closes all cached Glide clients
-- `PROXY CLIENTINFO <id>` — returns client info
 
 ## Configuration
 
@@ -170,7 +112,7 @@ management:
 Or via CLI:
 
 ```bash
-java -jar valkey-cluster-proxy-0.1.0-SNAPSHOT.jar \
+java -jar valkeyway.jar \
   --proxy.host=0.0.0.0 \
   --proxy.port=6379 \
   --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
@@ -188,8 +130,8 @@ java -jar valkey-cluster-proxy-0.1.0-SNAPSHOT.jar \
 # Run integration tests (requires Docker/Podman)
 ./mvnw verify -Dskip.integration.tests=false
 
-# Run locally (with cluster on ports 7000-7005)
-java -jar target/valkey-cluster-proxy-0.1.0-SNAPSHOT.jar
+# Run locally (with cluster on ports 7000-7002)
+java -jar target/valkeyway.jar
 
 # Test with valkey-cli (no --cluster flag needed)
 valkey-cli -h 127.0.0.1 -p 6379 SET mykey hello
@@ -210,12 +152,12 @@ valkey-cli -h 127.0.0.1 -p 6379 SCAN 0 MATCH "prefix:*" COUNT 100
 
 ```bash
 # Build image
-docker build -t valkey-cluster-proxy:latest .
+docker build -t valkeyway:latest .
 
 # Run with existing cluster
-docker run -d --name proxy \
+docker run -d --name valkeyway \
   -p 6379:6379 -p 6380:6380 \
-  valkey-cluster-proxy:latest \
+  valkeyway:latest \
   --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 
 # Local dev with full cluster (docker-compose.dev.yml)
@@ -252,15 +194,19 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - MULTI/EXEC (cross-slot via ClusterBatch(false))
 - DISCARD
 
-### Pass-through (customCommand)
+### Basic commands (pass-through via customCommand)
 
-All other Valkey commands are forwarded via `customCommand()`. glide routes single-key commands correctly. Commands whose keys span multiple slots may return `CROSSSLOT` errors from the cluster.
+- GET, SET, SETEX, GETSET
+- HGET, HSET, HGETALL, HMGET, HDEL, HINCRBY
+- LPUSH, RPUSH, LPOP, RPOP, LRANGE
+- INCR, DECR, EXISTS, TTL, EXPIRE
+- Keys routed by glide; cross-slot operations may return CROSSSLOT errors
 
 ## Tech Stack
 
 - Java 25
 - Spring Boot 4.1.0
-- resp-server (client-facing RESP2 server)
+- resp-server (client-facing RESP server)
 - valkey-glide 2.5.0 (cluster client)
 - Micrometer + Spring Boot Actuator (metrics and health)
 - Maven Wrapper
