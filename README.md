@@ -18,7 +18,7 @@ Client (non-cluster-aware)
 │  Valkey Cluster Proxy :6379          │
 │                                      │
 │  resp-server library                 │
-│    ├─ RESP2 server (Netty-based)     │
+│    ├─ RESP server (Netty-based)      │
 │    ├─ Command routing                │
 │    └─ Per-session state management   │
 │                                      │
@@ -31,6 +31,8 @@ Client (non-cluster-aware)
 │    │   ├─ ScanCommand                │
 │    │   ├─ PingCommand / InfoCommand  │
 │    │   ├─ TimeCommand                │
+│    │   ├─ HelloCommand               │
+│    │   ├─ ClusterCommand             │
 │    │   ├─ ProxyAdminCommand          │
 │    │   └─ CatchAllCommand            │
 │    │       └─ customCommand()        │
@@ -136,6 +138,8 @@ Custom admin commands for proxy management:
 - `PROXY CONFIG GET <key>` — returns proxy config value (from in-memory store or defaults)
 - `PROXY CONFIG SET <key> <value>` — sets in-memory config
 - `PROXY STATS` — returns basic cluster stats
+- `PROXY FLUSHCLIENTS` — closes all cached Glide clients
+- `PROXY CLIENTINFO <id>` — returns client info
 
 ## Configuration
 
@@ -202,6 +206,22 @@ valkey-cli -h 127.0.0.1 -p 6379 DEL key1 key2 key3
 valkey-cli -h 127.0.0.1 -p 6379 SCAN 0 MATCH "prefix:*" COUNT 100
 ```
 
+## Docker
+
+```bash
+# Build image
+docker build -t valkey-cluster-proxy:latest .
+
+# Run with existing cluster
+docker run -d --name proxy \
+  -p 6379:6379 -p 6380:6380 \
+  valkey-cluster-proxy:latest \
+  --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+
+# Local dev with full cluster (docker-compose.dev.yml)
+docker compose -f docker-compose.dev.yml up -d
+```
+
 ## Health and Metrics
 
 Spring Boot Actuator endpoints are exposed on a separate management port (default 6380):
@@ -247,7 +267,6 @@ All other Valkey commands are forwarded via `customCommand()`. glide routes sing
 
 ## Limitations
 
-- SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error

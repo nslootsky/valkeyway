@@ -13,13 +13,11 @@ import io.github.nslootsky.proxy.scan.ScanCursorStore;
  */
 public class ProxyCommandSuite extends CommandSuite {
 
-    private final GlideClientCache glideClientCache;
-    private final MetricsCollector metrics;
+    private final CatchAllCommand catchAllCommand;
 
     public ProxyCommandSuite(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore, MetricsCollector metrics) {
         super();
-        this.glideClientCache = glideClientCache;
-        this.metrics = metrics;
+        this.catchAllCommand = new CatchAllCommand(glideClientCache, metrics);
 
         addCommand("select", new SelectCommand(glideClientCache));
         addCommand("multi", new MultiCommand());
@@ -41,7 +39,7 @@ public class ProxyCommandSuite extends CommandSuite {
     public RespCommand getCommand(String name) {
         RespCommand command = super.getCommand(name);
         if (command != null && command.getClass().getSimpleName().equals("NullCommand")) {
-            return new CatchAllCommand(glideClientCache, metrics);
+            return catchAllCommand;
         }
         return command;
     }
