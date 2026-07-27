@@ -42,8 +42,7 @@ class TransactionTest extends IntegrationTestBase {
     @Test
     @Order(3)
     void glideBatchTransaction() throws Exception {
-        GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT);
-        try {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             Batch batch = new Batch(true);
             batch.set("batch_key1", "batch_val1");
             batch.set("batch_key2", "batch_val2");
@@ -54,16 +53,13 @@ class TransactionTest extends IntegrationTestBase {
             assertEquals("OK", result[0]);
             assertEquals("OK", result[1]);
             assertEquals("batch_val1", result[2]);
-        } finally {
-            client.close();
         }
     }
 
     @Test
     @Order(4)
     void glideBatchPipeline() throws Exception {
-        GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT);
-        try {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             Batch pipeline = new Batch(false);
             pipeline.set("pipe_key1", "pipe_val1");
             pipeline.set("pipe_key2", "pipe_val2");
@@ -74,8 +70,6 @@ class TransactionTest extends IntegrationTestBase {
             assertEquals("OK", result[0]);
             assertEquals("OK", result[1]);
             assertEquals("pipe_val1", result[2]);
-        } finally {
-            client.close();
         }
     }
 }

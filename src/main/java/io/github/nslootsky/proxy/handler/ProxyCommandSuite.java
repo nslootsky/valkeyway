@@ -29,7 +29,8 @@ public class ProxyCommandSuite extends CommandSuite {
         addCommand("scan", new ScanCommand(glideClientCache, scanCursorStore));
         addCommand("proxy", new ProxyAdminCommand(glideClientCache));
         addCommand("hello", new HelloCommand(glideClientCache, metrics));
-        addCommand("info", new InfoCommand(glideClientCache, metrics));
+        addCommand("info", new InfoCommand(metrics));
+        addCommand("cluster", new ClusterCommand());
     }
 
     @Override

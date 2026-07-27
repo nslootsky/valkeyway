@@ -5,7 +5,6 @@ import glide.api.models.commands.SetOptions;
 import glide.api.models.commands.scan.ScanOptions;
 import glide.api.models.configuration.GlideClientConfiguration;
 import glide.api.models.configuration.NodeAddress;
-import glide.api.models.configuration.NodeDiscoveryMode;
 import glide.api.models.configuration.ProtocolVersion;
 
 import java.util.HashMap;
@@ -21,8 +20,7 @@ public class GlideTestClient implements AutoCloseable {
         GlideClientConfiguration config = GlideClientConfiguration.builder()
                 .address(NodeAddress.builder().host(host).port(port).build())
                 .requestTimeout(5000)
-                .protocol(ProtocolVersion.RESP2)
-                .nodeDiscoveryMode(NodeDiscoveryMode.STATIC)
+                .protocol(ProtocolVersion.RESP3)
                 .build();
         this.client = GlideClient.createClient(config).get(10, TimeUnit.SECONDS);
     }
@@ -32,8 +30,7 @@ public class GlideTestClient implements AutoCloseable {
                 .address(NodeAddress.builder().host(host).port(port).build())
                 .databaseId(databaseId)
                 .requestTimeout(5000)
-                .protocol(ProtocolVersion.RESP2)
-                .nodeDiscoveryMode(NodeDiscoveryMode.STATIC)
+                .protocol(ProtocolVersion.RESP3)
                 .build();
         this.client = GlideClient.createClient(config).get(10, TimeUnit.SECONDS);
     }

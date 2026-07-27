@@ -54,7 +54,7 @@ class BasicOperationsTest extends IntegrationTestBase {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             String result = client.info();
             assertNotNull(result);
-            assertTrue(result.contains("redis_version") || result.contains("valkey_version"));
+            assertTrue(result.contains("role:master"));
         }
     }
 

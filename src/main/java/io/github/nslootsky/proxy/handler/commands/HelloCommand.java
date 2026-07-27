@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,7 +40,7 @@ public class HelloCommand implements RespCommand {
             GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
             ClusterValue<Object> result = client.customCommand(cmdArgs).get();
             if (result.hasMultiData()) {
-                Map<String, Object> multiValue = result.getMultiValue();
+                Map<String, Object> multiValue = new HashMap<>(result.getMultiValue());
                 multiValue.put("mode", "standalone");
                 return TokenUtils.toRedisToken(multiValue);
             }
