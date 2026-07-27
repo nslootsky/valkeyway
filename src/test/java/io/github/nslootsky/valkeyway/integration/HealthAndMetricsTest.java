@@ -45,4 +45,38 @@ class HealthAndMetricsTest extends IntegrationTestBase {
         assertEquals(200, response.getStatusCode().value());
         assertNotNull(response.getBody());
     }
+
+    @Test
+    @Order(4)
+    void metricsReflectCommandActivity() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            client.set("metrics_test_key", "value");
+            client.get("metrics_test_key");
+            client.del("metrics_test_key");
+        }
+
+        Thread.sleep(500);
+
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "http://localhost:" + managementPort + "/actuator/metrics/proxy.commands.processed", String.class);
+
+        assertEquals(200, response.getStatusCode().value());
+        String body = response.getBody();
+        assertNotNull(body);
+        assertTrue(body.contains("\"value\""), "Metrics should contain value field");
+    }
+
+    @Test
+    @Order(5)
+    void prometheusMetricsContainProxyMetrics() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "http://localhost:" + managementPort + "/actuator/prometheus", String.class);
+
+        assertEquals(200, response.getStatusCode().value());
+        String body = response.getBody();
+        assertNotNull(body);
+        assertTrue(body.contains("proxy_commands_processed"), "Prometheus metrics should contain proxy_commands_processed");
+        assertTrue(body.contains("proxy_errors"), "Prometheus metrics should contain proxy_errors");
+        assertTrue(body.contains("proxy_commands_latency"), "Prometheus metrics should contain proxy_commands_latency");
+    }
 }
