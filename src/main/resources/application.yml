@@ -19,5 +19,5 @@ management:
 
 logging:
   level:
-    io.github.nslootsky.proxy: INFO
+    io.github.nslootsky.valkeyway: INFO
     root: INFO

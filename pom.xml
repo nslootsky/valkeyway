@@ -11,8 +11,8 @@
         <relativePath/>
     </parent>
 
-    <groupId>io.github.nslootsky.proxy</groupId>
-    <artifactId>valkey-cluster-proxy</artifactId>
+    <groupId>io.github.nslootsky.valkeyway</groupId>
+    <artifactId>valkeyway</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <name>Valkey Cluster Proxy</name>
     <description>RESP proxy from non-cluster-aware clients to Valkey/Redis cluster</description>
