@@ -1,7 +1,11 @@
-# ValkeyWay
-
-[![CI](https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml/badge.svg)](https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<div align="center">
+  <img src="images/logo.png" alt="ValkeyWay Logo" width="280"/>
+  <h1>ValkeyWay</h1>
+  <p>
+    <a href="https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml"><img src="https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
+  </p>
+</div>
 
 A RESP proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone Valkey instance.
 
