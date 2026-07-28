@@ -24,7 +24,7 @@ public class ValkeywayCommandSuite extends CommandSuite {
         super();
         this.catchAllCommand = new CatchAllCommand(glideClientCache, metrics);
 
-        addCommand("select", new SelectCommand(glideClientCache));
+        addCommand("select", new SelectCommand());
         addCommand("multi", new MultiCommand());
         addCommand("exec", new ExecCommand(glideClientCache));
         addCommand("discard", new DiscardCommand());
@@ -35,7 +35,7 @@ public class ValkeywayCommandSuite extends CommandSuite {
         addCommand("mget", new MgetCommand(glideClientCache));
         addCommand("scan", new ScanCommand(glideClientCache, scanCursorStore));
         addCommand("proxy", new ValkeywayAdminCommand(glideClientCache));
-        addCommand("hello", new HelloCommand(glideClientCache, metrics));
+        addCommand("hello", new HelloCommand());
         addCommand("info", new InfoCommand(metrics));
         addCommand("cluster", new ClusterCommand());
     }

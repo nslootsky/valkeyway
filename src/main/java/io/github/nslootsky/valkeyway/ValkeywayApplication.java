@@ -13,7 +13,6 @@ import io.github.nslootsky.valkeyway.scan.ScanCursorStore;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -49,15 +48,10 @@ public class ValkeywayApplication {
                 .commands(commandSuite)
                 .parallelExecution()
                 .build();
+        log.info("Starting proxy on {}:{}", props.host(), props.port());
+        server.start();
+        log.info("Proxy ready");
         return server;
-    }
-
-    @Bean
-    CommandLineRunner startServer(RespServer server, ValkeywayProperties props) {
-        return args -> {
-            log.info("Starting proxy on {}:{}", props.host(), props.port());
-            server.start();
-        };
     }
 
     @PreDestroy

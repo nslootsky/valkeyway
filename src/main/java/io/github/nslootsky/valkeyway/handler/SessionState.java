@@ -40,7 +40,8 @@ public class SessionState {
 
     public static GlideClusterClient getOrCreateGlideClient(Session session, GlideClientCache cache) {
         return (GlideClusterClient) session.getValue(GLIDE_CLIENT).orElseGet(() -> {
-            GlideClusterClient client = cache.getClient(0);
+            int db = getCurrentDb(session);
+            GlideClusterClient client = cache.getClient(db);
             session.putValue(GLIDE_CLIENT, client);
             return client;
         });
@@ -48,6 +49,10 @@ public class SessionState {
 
     public static void setGlideClient(Session session, GlideClusterClient client) {
         session.putValue(GLIDE_CLIENT, client);
+    }
+
+    public static void clearGlideClient(Session session) {
+        session.putValue(GLIDE_CLIENT, null);
     }
 
     public static boolean isInTransaction(Session session) {

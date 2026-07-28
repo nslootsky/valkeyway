@@ -53,6 +53,10 @@ public class CatchAllCommand implements RespCommand {
                 return RedisToken.status("QUEUED");
             }
 
+            if (command.equalsIgnoreCase("CLIENT")) {
+                return handleClientCommand(args);
+            }
+
             RedisToken result = handleCustomCommand(session, args);
             if (result.getType().name().equals("ERROR")) {
                 metrics.recordError();
@@ -65,6 +69,20 @@ public class CatchAllCommand implements RespCommand {
         } finally {
             metrics.stopTimer(timer);
         }
+    }
+
+    private RedisToken handleClientCommand(List<String> args) {
+        if (args.size() >= 2 && args.get(1).equalsIgnoreCase("SETINFO")) {
+            log.debug("CLIENT SETINFO handled locally");
+            return RedisToken.status("OK");
+        }
+        if (args.size() >= 2 && args.get(1).equalsIgnoreCase("GETNAME")) {
+            return RedisToken.nullString();
+        }
+        if (args.size() >= 2 && args.get(1).equalsIgnoreCase("ID")) {
+            return RedisToken.integer((int) (System.currentTimeMillis() % 1000000));
+        }
+        return handleCustomCommand(null, args);
     }
 
     private List<String> toArgs(Request request) {

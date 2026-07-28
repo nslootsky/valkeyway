@@ -9,25 +9,20 @@ import com.github.tonivade.resp.annotation.Command;
 import com.github.tonivade.resp.command.Request;
 import com.github.tonivade.resp.command.RespCommand;
 import com.github.tonivade.resp.protocol.RedisToken;
-import glide.api.GlideClusterClient;
-import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * SELECT command handler. Switches the session to the specified database index.
- * Not allowed inside MULTI/EXEC.
+ * Client is created lazily on first actual use. Not allowed inside MULTI/EXEC.
  */
 @Command("select")
 public class SelectCommand implements RespCommand {
 
     private static final Logger log = LoggerFactory.getLogger(SelectCommand.class);
 
-    private final GlideClientCache glideClientCache;
-
-    public SelectCommand(GlideClientCache glideClientCache) {
-        this.glideClientCache = glideClientCache;
+    public SelectCommand() {
     }
 
     @Override
@@ -47,8 +42,7 @@ public class SelectCommand implements RespCommand {
             log.debug("SELECT db={} currentDb={}", db, currentDb);
             if (db != currentDb) {
                 SessionState.setCurrentDb(session, db);
-                GlideClusterClient client = glideClientCache.getClient(db);
-                SessionState.setGlideClient(session, client);
+                SessionState.clearGlideClient(session);
             }
             return RedisToken.status("OK");
         } catch (NumberFormatException e) {
