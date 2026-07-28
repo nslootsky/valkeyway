@@ -56,4 +56,4 @@ jobs:
             build-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-
 
       - name: Run integration tests
-        run: ./mvnw verify -Dskip.integration.tests=false -DskipTests=true
+        run: ./mvnw failsafe:integration-test failsafe:verify -Dskip.integration.tests=false
