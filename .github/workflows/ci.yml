@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
   build:
@@ -19,8 +19,5 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build and run unit tests
-        run: ./mvnw verify -DskipTests=false -q
-
-      - name: Run integration tests
-        run: ./mvnw verify -Dskip.integration.tests=false -q
+      - name: Build and test
+        run: ./mvnw verify -Dskip.integration.tests=false

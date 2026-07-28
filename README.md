@@ -3,7 +3,7 @@
 [![CI](https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml/badge.svg)](https://github.com/nslootsky/valkeyway/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A RESP proxy that presents a Valkey cluster as a single standalone Valkey instance.
+A RESP proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone Valkey instance.
 
 ValkeyWay is a Java 25 + Spring Boot proxy that sits between non-cluster-aware clients and a Valkey/Redis cluster. It uses [valkey-glide](https://github.com/valkey-io/valkey-glide) for cluster routing, MOVED/ASK handling, and multi-slot command splitting, and [resp-server](https://github.com/tonivade/resp-server) for the client-facing RESP protocol.
 
