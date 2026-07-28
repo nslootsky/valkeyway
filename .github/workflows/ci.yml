@@ -19,5 +19,41 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build and test
-        run: ./mvnw verify -Dskip.integration.tests=false
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            target
+            .m2
+          key: build-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-
+
+      - name: Compile and run unit tests
+        run: ./mvnw compile test -Dskip.integration.tests=true
+
+  integration-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Restore build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            target
+            .m2
+          key: build-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-
+
+      - name: Run integration tests
+        run: ./mvnw verify -Dskip.integration.tests=false -DskipTests=true
