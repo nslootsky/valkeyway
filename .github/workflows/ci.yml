@@ -17,7 +17,6 @@ jobs:
         with:
           java-version: '25'
           distribution: 'temurin'
-          cache: maven
 
       - name: Cache build artifacts
         uses: actions/cache@v6
@@ -43,7 +42,6 @@ jobs:
         with:
           java-version: '25'
           distribution: 'temurin'
-          cache: maven
 
       - name: Restore build artifacts
         uses: actions/cache@v6
