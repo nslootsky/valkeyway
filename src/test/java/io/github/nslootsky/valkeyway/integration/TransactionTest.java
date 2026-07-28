@@ -21,8 +21,8 @@ class TransactionTest extends IntegrationTestBase {
     void multiExec() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.multi());
-            assertEquals("QUEUED", client.customCommand("SET", "tx_key1", "val1"));
-            assertEquals("QUEUED", client.customCommand("SET", "tx_key2", "val2"));
+            assertEquals("QUEUED", client.set("tx_key1", "val1"));
+            assertEquals("QUEUED", client.set("tx_key2", "val2"));
             Object[] result = client.exec();
             assertNotNull(result);
             assertEquals(2, result.length);
@@ -38,7 +38,7 @@ class TransactionTest extends IntegrationTestBase {
     void discard() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.multi());
-            assertEquals("QUEUED", client.customCommand("SET", "discard_key", "should_not_exist"));
+            assertEquals("QUEUED", client.set("discard_key", "should_not_exist"));
             assertEquals("OK", client.discard());
             assertNull(client.get("discard_key"));
         }

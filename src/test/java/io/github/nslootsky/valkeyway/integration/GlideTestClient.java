@@ -13,7 +13,6 @@ import glide.api.models.configuration.NodeAddress;
 import glide.api.models.configuration.ProtocolVersion;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
