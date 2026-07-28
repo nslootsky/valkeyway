@@ -21,7 +21,7 @@ RUN addgroup -S proxy && adduser -S proxy -G proxy
 WORKDIR /app
 
 # Copy jar from build stage (final name without SNAPSHOT)
-COPY --from=build /app/target/valkey-cluster-proxy-*.jar app.jar
+COPY --from=build /app/target/valkeyway*.jar app.jar
 
 USER proxy
 
