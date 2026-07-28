@@ -13,6 +13,7 @@ import glide.api.models.configuration.NodeAddress;
 import glide.api.models.configuration.ProtocolVersion;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -155,6 +156,46 @@ public class GlideTestClient implements AutoCloseable {
 
     public GlideClient getClient() {
         return client;
+    }
+
+    public Long incr(String key) throws Exception {
+        return client.incr(key).get(5, TimeUnit.SECONDS);
+    }
+
+    public Long decr(String key) throws Exception {
+        return client.decr(key).get(5, TimeUnit.SECONDS);
+    }
+
+    public String getset(String key, String value) throws Exception {
+        return (String) client.customCommand(new String[]{"GETSET", key, value}).get(5, TimeUnit.SECONDS);
+    }
+
+    public Long lpush(String key, String... values) throws Exception {
+        return client.lpush(key, values).get(5, TimeUnit.SECONDS);
+    }
+
+    public Long rpush(String key, String... values) throws Exception {
+        return client.rpush(key, values).get(5, TimeUnit.SECONDS);
+    }
+
+    public String lpop(String key) throws Exception {
+        return client.lpop(key).get(5, TimeUnit.SECONDS);
+    }
+
+    public String rpop(String key) throws Exception {
+        return client.rpop(key).get(5, TimeUnit.SECONDS);
+    }
+
+    public String[] lrange(String key, long start, long end) throws Exception {
+        return client.lrange(key, start, end).get(5, TimeUnit.SECONDS);
+    }
+
+    public String[] hmget(String key, String... fields) throws Exception {
+        return client.hmget(key, fields).get(5, TimeUnit.SECONDS);
+    }
+
+    public Long hincrby(String key, String field, long amount) throws Exception {
+        return client.hincrBy(key, field, amount).get(5, TimeUnit.SECONDS);
     }
 
     @Override
