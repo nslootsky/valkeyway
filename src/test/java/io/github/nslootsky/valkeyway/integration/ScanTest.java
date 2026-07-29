@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -78,7 +76,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_count_missing_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0"});
+            Object[] result = client.customCommandArr("SCAN", "0");
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= 10, "Expected at least 10 keys with default COUNT, got " + keys.length);
         }
@@ -92,7 +90,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_count_below_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0", "COUNT", "50"});
+            Object[] result = client.customCommandArr("SCAN", "0", "COUNT", "50");
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= 50, "Expected at least 50 keys, got " + keys.length);
         }
@@ -106,7 +104,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_count_equal_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0", "COUNT", String.valueOf(NUM_KEYS)});
+            Object[] result = client.customCommandArr("SCAN", "0", "COUNT", String.valueOf(NUM_KEYS));
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys, got " + keys.length);
         }
@@ -120,7 +118,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_count_above_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0", "COUNT", "999"});
+            Object[] result = client.customCommandArr("SCAN", "0", "COUNT", "999");
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys, got " + keys.length);
         }
@@ -134,7 +132,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_match_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0", "MATCH", "scan_match_*", "COUNT", "50"});
+            Object[] result = client.customCommandArr("SCAN", "0", "MATCH", "scan_match_*", "COUNT", "50");
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= 50, "Expected at least 50 keys with MATCH, got " + keys.length);
         }
@@ -148,7 +146,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_match_eq_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0", "MATCH", "scan_match_eq_*", "COUNT", String.valueOf(NUM_KEYS)});
+            Object[] result = client.customCommandArr("SCAN", "0", "MATCH", "scan_match_eq_*", "COUNT", String.valueOf(NUM_KEYS));
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys with MATCH, got " + keys.length);
         }
@@ -162,7 +160,7 @@ class ScanTest extends IntegrationTestBase {
                 client.set("scan_match_above_" + i, "v");
             }
 
-            Object[] result = client.customCommandArr(new String[]{"SCAN", "0", "MATCH", "scan_match_above_*", "COUNT", "999"});
+            Object[] result = client.customCommandArr("SCAN", "0", "MATCH", "scan_match_above_*", "COUNT", "999");
             Object[] keys = (Object[]) result[1];
             assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys with MATCH, got " + keys.length);
         }

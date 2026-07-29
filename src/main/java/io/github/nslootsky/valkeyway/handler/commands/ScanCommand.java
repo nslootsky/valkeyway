@@ -32,6 +32,7 @@ import java.util.List;
 public class ScanCommand implements RespCommand {
 
     private static final Logger log = LoggerFactory.getLogger(ScanCommand.class);
+    public static final int SCAN_MAX_RESULTS = 5000;
 
     private final GlideClientCache glideClientCache;
     private final ScanCursorStore scanCursorStore;
@@ -95,7 +96,7 @@ public class ScanCommand implements RespCommand {
             List<Object> allKeys = new ArrayList<>();
             ClusterScanCursor currentCursor = scanCursor;
 
-            while (!currentCursor.isFinished() && allKeys.size() < count) {
+            while (!currentCursor.isFinished() && allKeys.size() < count && allKeys.size() < SCAN_MAX_RESULTS) {
                 Object[] result = client.scan(currentCursor, options).get();
                 ClusterScanCursor nextCursor = (ClusterScanCursor) result[0];
                 Object[] keys = (Object[]) result[1];

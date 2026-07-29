@@ -11,7 +11,6 @@ import glide.api.models.GlideString;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
