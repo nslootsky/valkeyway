@@ -21,7 +21,6 @@ import java.util.Set;
 public class SessionState {
 
     private static final String CURRENT_DB = "currentDb";
-    private static final String GLIDE_CLIENT = "glideClient";
     private static final String IN_TRANSACTION = "inTransaction";
     private static final String TRANSACTION_COMMANDS = "transactionCommands";
     private static final String TRANSACTION_ERROR = "transactionError";
@@ -39,20 +38,8 @@ public class SessionState {
     }
 
     public static GlideClusterClient getOrCreateGlideClient(Session session, GlideClientCache cache) {
-        return (GlideClusterClient) session.getValue(GLIDE_CLIENT).orElseGet(() -> {
-            int db = getCurrentDb(session);
-            GlideClusterClient client = cache.getClient(db);
-            session.putValue(GLIDE_CLIENT, client);
-            return client;
-        });
-    }
-
-    public static void setGlideClient(Session session, GlideClusterClient client) {
-        session.putValue(GLIDE_CLIENT, client);
-    }
-
-    public static void clearGlideClient(Session session) {
-        session.putValue(GLIDE_CLIENT, null);
+        int db = getCurrentDb(session);
+        return cache.getClient(db);
     }
 
     public static boolean isInTransaction(Session session) {

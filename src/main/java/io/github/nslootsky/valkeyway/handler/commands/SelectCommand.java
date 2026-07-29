@@ -42,7 +42,6 @@ public class SelectCommand implements RespCommand {
             log.debug("SELECT db={} currentDb={}", db, currentDb);
             if (db != currentDb) {
                 SessionState.setCurrentDb(session, db);
-                SessionState.clearGlideClient(session);
             }
             return RedisToken.status("OK");
         } catch (NumberFormatException e) {
