@@ -11,6 +11,7 @@ import com.github.tonivade.resp.command.RespCommand;
 import com.github.tonivade.resp.protocol.RedisToken;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterBatch;
+import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.SessionState;
 import org.slf4j.Logger;
@@ -42,7 +43,7 @@ public class ExecCommand implements RespCommand {
         }
 
         String txError = SessionState.getTransactionError(session);
-        List<String[]> buffered = new ArrayList<>(SessionState.getTransactionCommands(session));
+        List<byte[][]> buffered = new ArrayList<>(SessionState.getTransactionCommands(session));
         boolean crossSlot = SessionState.getTransactionSlots(session).size() > 1;
         SessionState.clearTransactionState(session);
 
@@ -56,8 +57,12 @@ public class ExecCommand implements RespCommand {
 
         try {
             GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
-            ClusterBatch batch = new ClusterBatch(!crossSlot);
-            for (String[] cmdArgs : buffered) {
+            ClusterBatch batch = new ClusterBatch(!crossSlot).withBinaryOutput();
+            for (byte[][] cmdBytes : buffered) {
+                GlideString[] cmdArgs = new GlideString[cmdBytes.length];
+                for (int i = 0; i < cmdBytes.length; i++) {
+                    cmdArgs[i] = GlideString.of(cmdBytes[i]);
+                }
                 batch.customCommand(cmdArgs);
             }
 

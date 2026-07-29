@@ -64,16 +64,16 @@ public class SessionState {
     }
 
     @SuppressWarnings("unchecked")
-    public static List<String[]> getTransactionCommands(Session session) {
-        return (List<String[]>) session.getValue(TRANSACTION_COMMANDS).orElse(new ArrayList<>());
+    public static List<byte[][]> getTransactionCommands(Session session) {
+        return (List<byte[][]>) session.getValue(TRANSACTION_COMMANDS).orElse(new ArrayList<>());
     }
 
-    public static void setTransactionCommands(Session session, List<String[]> commands) {
+    public static void setTransactionCommands(Session session, List<byte[][]> commands) {
         session.putValue(TRANSACTION_COMMANDS, commands);
     }
 
     public static void clearTransactionCommands(Session session) {
-        session.putValue(TRANSACTION_COMMANDS, new ArrayList<String[]>());
+        session.putValue(TRANSACTION_COMMANDS, new ArrayList<byte[][][]>());
     }
 
     public static String getTransactionError(Session session) {
