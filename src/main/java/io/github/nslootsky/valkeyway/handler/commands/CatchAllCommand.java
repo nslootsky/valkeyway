@@ -11,6 +11,7 @@ import com.github.tonivade.resp.command.Session;
 import com.github.tonivade.resp.protocol.RedisToken;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
+import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.SessionState;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
@@ -49,15 +50,15 @@ public class CatchAllCommand implements RespCommand {
         try {
             metrics.recordCommand(command);
             if (SessionState.isInTransaction(session)) {
-                queueTransactionCommand(session, args);
+                queueTransactionCommand(session, request);
                 return RedisToken.status("QUEUED");
             }
 
             if (command.equalsIgnoreCase("CLIENT")) {
-                return handleClientCommand(args);
+                return handleClientCommand(request);
             }
 
-            RedisToken result = handleCustomCommand(session, args);
+            RedisToken result = handleCustomCommand(request);
             if (result.getType().name().equals("ERROR")) {
                 metrics.recordError();
             }
@@ -71,7 +72,8 @@ public class CatchAllCommand implements RespCommand {
         }
     }
 
-    private RedisToken handleClientCommand(List<String> args) {
+    private RedisToken handleClientCommand(Request request) {
+        List<String> args = toArgs(request);
         if (args.size() >= 2 && args.get(1).equalsIgnoreCase("SETINFO")) {
             log.debug("CLIENT SETINFO handled locally");
             return RedisToken.status("OK");
@@ -82,7 +84,7 @@ public class CatchAllCommand implements RespCommand {
         if (args.size() >= 2 && args.get(1).equalsIgnoreCase("ID")) {
             return RedisToken.integer((int) (System.currentTimeMillis() % 1000000));
         }
-        return handleCustomCommand(null, args);
+        return handleCustomCommand(request);
     }
 
     private List<String> toArgs(Request request) {
@@ -94,47 +96,72 @@ public class CatchAllCommand implements RespCommand {
         return args;
     }
 
-    private void queueTransactionCommand(Session session, List<String> args) {
+    private GlideString[] toGlideArgs(Request request) {
+        List<GlideString> args = new ArrayList<>();
+        args.add(GlideString.of(request.getCommand()));
+        for (var param : request.getParams()) {
+            args.add(GlideString.of(param.getBytes()));
+        }
+        return args.toArray(new GlideString[0]);
+    }
+
+    private void queueTransactionCommand(Session session, Request request) {
         String txError = SessionState.getTransactionError(session);
         if (txError != null) {
             return;
         }
-        List<String> keys = extractKeys(args);
+        byte[][] cmdBytes = new byte[request.getLength() + 1][];
+        cmdBytes[0] = request.getCommand().getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        int i = 1;
+        for (var param : request.getParams()) {
+            cmdBytes[i++] = param.getBytes();
+        }
+        List<byte[]> keys = extractKeys(cmdBytes);
         Set<Integer> slots = SessionState.getTransactionSlots(session);
-        for (String key : keys) {
-            slots.add(key.hashCode() & 0x3FFF);
+        for (byte[] key : keys) {
+            int hash = 0;
+            for (byte b : key) {
+                hash = (hash * 31) + b;
+            }
+            slots.add(hash & 0x3FFF);
         }
         SessionState.setTransactionSlots(session, slots);
-        List<String[]> commands = SessionState.getTransactionCommands(session);
-        commands.add(args.toArray(new String[0]));
+        List<byte[][]> commands = SessionState.getTransactionCommands(session);
+        commands.add(cmdBytes);
         SessionState.setTransactionCommands(session, commands);
     }
 
-    private List<String> extractKeys(List<String> args) {
-        String command = args.getFirst().toUpperCase();
-        if (args.size() < 2) {
+    private List<byte[]> extractKeys(byte[][] cmdBytes) {
+        String command = new String(cmdBytes[0], java.nio.charset.StandardCharsets.US_ASCII).toUpperCase();
+        if (cmdBytes.length < 2) {
             return List.of();
         }
         return switch (command) {
-            case "DEL", "UNLINK", "MGET", "EXISTS", "TOUCH" -> args.subList(1, args.size());
-            case "SET", "GET", "HSET", "HGET", "INCR", "DECR" -> List.of(args.get(1));
-            default -> List.of(args.get(1));
+            case "DEL", "UNLINK", "MGET", "EXISTS", "TOUCH" -> {
+                List<byte[]> keys = new ArrayList<>();
+                for (int i = 1; i < cmdBytes.length; i++) {
+                    keys.add(cmdBytes[i]);
+                }
+                yield keys;
+            }
+            case "SET", "GET", "HSET", "HGET", "INCR", "DECR" -> List.of(cmdBytes[1]);
+            default -> List.of(cmdBytes[1]);
         };
     }
 
-    private RedisToken handleCustomCommand(Session session, List<String> args) {
-        String[] cmdArgs = args.toArray(new String[0]);
+    private RedisToken handleCustomCommand(Request request) {
         try {
-            GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
+            GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
+            GlideString[] cmdArgs = toGlideArgs(request);
             ClusterValue<Object> result = client.customCommand(cmdArgs).get();
             Object singleValue = result.hasSingleData() ? result.getSingleValue() : null;
             Object multiValue = result.hasMultiData() ? result.getMultiValue() : null;
             log.debug("OK {} result={}, hasSingle={}, hasMulti={}, singleValue={}, multiValue={}",
-                    cmdArgs[0], TokenUtils.summarize(result),
+                    request.getCommand(), TokenUtils.summarize(result),
                     result.hasSingleData(), result.hasMultiData(), singleValue, multiValue);
             return TokenUtils.toRedisToken(result);
         } catch (Exception e) {
-            log.error("ERR {} error={}", cmdArgs[0], e.getMessage());
+            log.error("ERR {} error={}", request.getCommand(), e.getMessage());
             return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
         }
     }

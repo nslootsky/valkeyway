@@ -6,7 +6,11 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import com.github.tonivade.resp.protocol.RedisToken;
+import com.github.tonivade.resp.protocol.SafeString;
 import glide.api.models.ClusterValue;
+import glide.api.models.GlideString;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +20,8 @@ import java.util.Map;
  * Utilities for converting Glide results to RedisToken and cleaning error messages.
  */
 public class TokenUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(TokenUtils.class);
 
     private TokenUtils() {}
 
@@ -61,7 +67,16 @@ public class TokenUtils {
     public static RedisToken toRedisToken(Object value) {
         return switch (value) {
             case null -> RedisToken.nullString();
-            case String s -> RedisToken.string(s);
+            case GlideString gs -> {
+                byte[] bytes = gs.getBytes();
+                yield RedisToken.string(new SafeString(bytes));
+            }
+            case String s -> {
+                if (s.equals("OK")) {
+                    yield RedisToken.status(s);
+                }
+                yield RedisToken.string(s);
+            }
             case Number n -> RedisToken.integer(n.intValue());
             case Boolean b -> RedisToken.integer(b ? 1 : 0);
             case Object[] arr -> toRedisArray(arr);
