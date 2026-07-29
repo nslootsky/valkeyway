@@ -19,6 +19,10 @@ import io.github.nslootsky.valkeyway.scan.ScanCursorStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * SCAN command handler. Iterates across all cluster nodes.
  * Cursors are UUIDs during iteration, "0" on completion.
@@ -88,32 +92,40 @@ public class ScanCommand implements RespCommand {
 
         try {
             GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
-            Object[] result = client.scan(scanCursor, options).get();
-            ClusterScanCursor newCursor =
-                    (ClusterScanCursor) result[0];
-            Object[] keys = (Object[]) result[1];
+            List<Object> allKeys = new ArrayList<>();
+            ClusterScanCursor currentCursor = scanCursor;
 
-            scanCursor.releaseCursorHandle();
+            while (!currentCursor.isFinished() && allKeys.size() < count) {
+                Object[] result = client.scan(currentCursor, options).get();
+                ClusterScanCursor nextCursor = (ClusterScanCursor) result[0];
+                Object[] keys = (Object[]) result[1];
+
+                currentCursor.releaseCursorHandle();
+                currentCursor = nextCursor;
+
+                if (keys != null) {
+                    Collections.addAll(allKeys, keys);
+                }
+            }
 
             String nextCursorStr;
-            if (newCursor.isFinished()) {
+            if (currentCursor.isFinished()) {
                 nextCursorStr = "0";
-                newCursor.releaseCursorHandle();
-                String currentCursorId = SessionState.getScanCursorId(session);
-                if (currentCursorId != null) {
-                    scanCursorStore.removeCursor(currentCursorId);
+                currentCursor.releaseCursorHandle();
+                String cursorId = SessionState.getScanCursorId(session);
+                if (cursorId != null) {
+                    scanCursorStore.removeCursor(cursorId);
                     SessionState.clearScanCursorId(session);
                 }
             } else {
-                String cursorId = scanCursorStore.createCursor(newCursor);
-                SessionState.setScanCursorId(session, cursorId);
-                nextCursorStr = cursorId;
+                nextCursorStr = scanCursorStore.createCursor(currentCursor);
+                SessionState.setScanCursorId(session, nextCursorStr);
             }
 
-            log.debug("SCAN OK keys={} finished={} cursor={}", keys.length, newCursor.isFinished(), nextCursorStr);
+            log.debug("SCAN OK keys={} finished={} cursor={}", allKeys.size(), currentCursor.isFinished(), nextCursorStr);
             return RedisToken.array(
                     RedisToken.string(nextCursorStr),
-                    TokenUtils.toRedisArray(keys)
+                    TokenUtils.toRedisArray(allKeys.toArray())
             );
         } catch (Exception e) {
             log.error("SCAN ERR {}", e.getMessage());
