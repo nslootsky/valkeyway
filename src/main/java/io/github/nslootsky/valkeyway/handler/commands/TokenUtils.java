@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -80,6 +81,7 @@ public class TokenUtils {
             case Number n -> RedisToken.integer(n.intValue());
             case Boolean b -> RedisToken.integer(b ? 1 : 0);
             case Object[] arr -> toRedisArray(arr);
+            case Collection<?> list -> toRedisArray(list.toArray());
             case Map<?, ?> map -> {
                 List<RedisToken> tokens = new ArrayList<>();
                 for (Map.Entry<?, ?> entry : map.entrySet()) {
