@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ScanTest extends IntegrationTestBase {
 
+    private static final int NUM_KEYS = 100;
+
     @Test
     @Order(1)
     void scanWithMatch() throws Exception {
@@ -63,6 +65,104 @@ class ScanTest extends IntegrationTestBase {
             assertTrue(keys.size() >= 2);
             assertTrue(keys.contains("scan_all_key_1"));
             assertTrue(keys.contains("scan_all_key_2"));
+        }
+    }
+
+    @Test
+    @Order(3)
+    void scanCountMissingReturnsAtLeastDefault() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_count_missing_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0");
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= 10, "Expected at least 10 keys with default COUNT, got " + keys.length);
+        }
+    }
+
+    @Test
+    @Order(4)
+    void scanCountBelowDbSizeReturnsAtLeastCount() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_count_below_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0", "COUNT", "50");
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= 50, "Expected at least 50 keys, got " + keys.length);
+        }
+    }
+
+    @Test
+    @Order(5)
+    void scanCountEqualDbSizeReturnsAllKeys() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_count_equal_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0", "COUNT", String.valueOf(NUM_KEYS));
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys, got " + keys.length);
+        }
+    }
+
+    @Test
+    @Order(6)
+    void scanCountAboveDbSizeReturnsAllKeys() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_count_above_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0", "COUNT", "999");
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys, got " + keys.length);
+        }
+    }
+
+    @Test
+    @Order(7)
+    void scanCountWithMatchBelowDbSizeReturnsAtLeastCount() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_match_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0", "MATCH", "scan_match_*", "COUNT", "50");
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= 50, "Expected at least 50 keys with MATCH, got " + keys.length);
+        }
+    }
+
+    @Test
+    @Order(8)
+    void scanCountWithMatchEqualDbSizeReturnsAllKeys() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_match_eq_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0", "MATCH", "scan_match_eq_*", "COUNT", String.valueOf(NUM_KEYS));
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys with MATCH, got " + keys.length);
+        }
+    }
+
+    @Test
+    @Order(9)
+    void scanCountWithMatchAboveDbSizeReturnsAllKeys() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            for (int i = 0; i < NUM_KEYS; i++) {
+                client.set("scan_match_above_" + i, "v");
+            }
+
+            Object[] result = client.customCommandArr("SCAN", "0", "MATCH", "scan_match_above_*", "COUNT", "999");
+            Object[] keys = (Object[]) result[1];
+            assertTrue(keys.length >= NUM_KEYS, "Expected at least " + NUM_KEYS + " keys with MATCH, got " + keys.length);
         }
     }
 }
