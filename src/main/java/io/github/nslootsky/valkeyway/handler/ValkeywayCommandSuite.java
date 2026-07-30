@@ -33,6 +33,7 @@ public class ValkeywayCommandSuite extends CommandSuite {
         addCommand("hello", new HelloCommand());
         addCommand("info", new InfoCommand(metrics));
         addCommand("cluster", new ClusterCommand());
+        addCommand("command", new CommandCommand(glideClientCache));
     }
 
     @Override

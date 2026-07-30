@@ -24,13 +24,6 @@ public class TokenUtils {
 
     private static final Logger log = LoggerFactory.getLogger(TokenUtils.class);
 
-    /**
-        The redis-cli tool barfs with an error if the values of the flags set aren't simple strings:
-        > redis-cli: redis-cli.c:583: cliAddCommandDocArg: Assertion `flags->element[j]->type == REDIS_REPLY_STATUS' failed.
-        See https://redis.io/docs/latest/develop/reference/command-arguments/
-     */
-    private static final Collection<GlideString> SPECIALS = List.of(GlideString.of("optional"), GlideString.of("multiple"), GlideString.of("multiple_token"));
-
     private TokenUtils() {}
 
     public static String cleanErrorMessage(String msg) {
@@ -76,9 +69,6 @@ public class TokenUtils {
         return switch (value) {
             case null -> RedisToken.nullString();
             case GlideString gs -> {
-                if (SPECIALS.contains(gs))  {
-                    yield RedisToken.status(gs.getString());
-                }
                 byte[] bytes = gs.getBytes();
                 yield RedisToken.string(new SafeString(bytes));
             }
