@@ -55,12 +55,12 @@ Client (non-cluster-aware)
 │    ├─ ValkeywayCommandSuite          │
 │    │   ├─ SelectCommand              │
 │    │   ├─ MultiCommand / ExecCommand │
-│    │   ├─ DelCommand / UnlinkCommand │
-│    │   ├─ MgetCommand                │
+│    │   ├─ DiscardCommand             │
 │    │   ├─ ScanCommand                │
-│    │   ├─ PingCommand / InfoCommand  │
+│    │   ├─ InfoCommand                │
 │    │   ├─ HelloCommand               │
 │    │   ├─ ClusterCommand             │
+│    │   ├─ CommandCommand             │
 │    │   ├─ ValkeywayAdminCommand      │
 │    │   └─ CatchAllCommand            │
 │    │       └─ customCommand()        │
@@ -186,24 +186,23 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 ## Supported Commands
 
-### Native support (typed glide APIs)
+### Dedicated handlers
 
-- DEL, UNLINK (multi-slot splitting)
-- MGET (multi-slot splitting)
-- SCAN (cluster-wide iteration)
-- SELECT, PING, INFO, TIME
+- SCAN (cluster-wide iteration with cursor persistence)
+- SELECT (per-session DB state)
+- MULTI/EXEC/DISCARD (transaction support)
+- INFO (proxy-specific response with role:master)
+- HELLO (standalone-mode response)
+- CLUSTER (standalone errors for INFO/NODES; others proxied)
+- COMMAND (all subcommands proxied; DOCS format adjusted for redis-cli)
 
-### Transaction support
+### All other commands (via customCommand)
 
-- MULTI/EXEC (cross-slot via ClusterBatch(false))
-- DISCARD
-
-### Basic commands (pass-through via customCommand)
-
-- GET, SET, SETEX, GETSET
+- GET, SET, SETEX, GETSET, DEL, UNLINK, EXISTS, TTL, EXPIRE
 - HGET, HSET, HGETALL, HMGET, HDEL, HINCRBY
 - LPUSH, RPUSH, LPOP, RPOP, LRANGE
-- INCR, DECR, EXISTS, TTL, EXPIRE
+- MGET, INCR, DECR, PING, TIME
+- SCRIPT/EVAL, CONFIG, CLIENT subcommands
 - Keys routed by glide; cross-slot operations may return CROSSSLOT errors
 
 ## Tech Stack
@@ -220,4 +219,6 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error
+- Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, etc.) work but block the session's connection until timeout or data arrives
+- Pub/Sub commands (SUBSCRIBE, PSUBSCRIBE) are not supported
 - No TLS support
