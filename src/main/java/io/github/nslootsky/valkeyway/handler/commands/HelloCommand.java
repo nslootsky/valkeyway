@@ -29,8 +29,8 @@ public class HelloCommand implements RespCommand {
         log.debug("HELLO args={}", request.getParams());
         Map<String, Object> response = Map.of(
                 "server", "valkeyway",
-                "version", "7.0.0",
-                "proto", 3,
+                "version", "0.1.0",
+                "proto", 2,
                 "id", System.currentTimeMillis(),
                 "mode", "standalone",
                 "modules", java.util.List.of()
