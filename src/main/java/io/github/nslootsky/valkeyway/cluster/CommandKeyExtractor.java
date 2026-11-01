@@ -66,6 +66,17 @@ public class CommandKeyExtractor {
         loadTable(client);
     }
 
+    /** Loads the command table on a background thread, so map-reply commands can start async soon after startup. */
+    public void preloadInBackground(io.github.nslootsky.valkeyway.cache.GlideClientCache clients) {
+        Thread.ofVirtual().name("command-table-preload").start(() -> {
+            try {
+                preload(clients.getClient(0));
+            } catch (Exception e) {
+                log.warn("Loading the command table failed; it will load on first use: {}", e.getMessage());
+            }
+        });
+    }
+
     /** Returned by {@link #singleSlot} when a command has no keys, or keys in more than one slot. */
     public static final int NO_SLOT = -1;
 
@@ -247,12 +258,7 @@ public class CommandKeyExtractor {
     }
 
     private List<byte[]> getKeysFromServer(GlideClusterClient client, byte[][] args) {
-        GlideString[] cmd = new GlideString[args.length + 2];
-        cmd[0] = GlideString.of("COMMAND");
-        cmd[1] = GlideString.of("GETKEYS");
-        for (int i = 0; i < args.length; i++) {
-            cmd[i + 2] = GlideString.of(args[i]);
-        }
+        GlideString[] cmd = io.github.nslootsky.valkeyway.backend.GlideArgs.of(new String[]{"COMMAND", "GETKEYS"}, args);
         try {
             Object value = client.customCommand(cmd).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).getSingleValue();
             List<byte[]> keys = new ArrayList<>();

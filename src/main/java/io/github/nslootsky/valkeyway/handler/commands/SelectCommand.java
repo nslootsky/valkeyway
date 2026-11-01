@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.transaction.TransactionQueue;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
@@ -31,8 +32,8 @@ public class SelectCommand implements CommandHandler {
         if (request.connection().inTransaction()) {
             // Running SELECT inside EXEC would switch the database of the backend connection that every
             // client shares. Discard the transaction rather than run its commands in the wrong database.
-            request.connection().transactionError(CatchAllCommand.EXECABORT);
-            return Reply.error("ERR Command 'select' is not supported inside a transaction by this proxy");
+            return TransactionQueue.reject(request.connection(),
+                    "ERR Command 'select' is not supported inside a transaction by this proxy");
         }
         if (request.argCount() != 1) {
             return Reply.error("ERR wrong number of arguments for 'select' command");

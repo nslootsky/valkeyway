@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.handler.commands;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
+import io.github.nslootsky.valkeyway.backend.GlideArgs;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.GlideReplies;
@@ -44,12 +45,7 @@ public class CommandCommand implements CommandHandler {
     public Reply execute(Request request) {
         try {
             GlideClusterClient client = glideClientCache.getClient(request.connection().db());
-            byte[][] args = request.args();
-            GlideString[] cmdArgs = new GlideString[args.length];
-            for (int i = 0; i < args.length; i++) {
-                cmdArgs[i] = GlideString.of(args[i]);
-            }
-            ClusterValue<Object> result = client.customCommand(cmdArgs).get();
+            ClusterValue<Object> result = client.customCommand(GlideArgs.of(request.args())).get();
             if (request.argCount() >= 1 && request.argString(0).equalsIgnoreCase("DOCS")) {
                 return toReplyForDocs(result.hasSingleData() ? result.getSingleValue() : result.getMultiValue());
             }

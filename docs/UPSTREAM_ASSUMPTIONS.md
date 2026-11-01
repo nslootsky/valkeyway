@@ -60,21 +60,21 @@ We rely on this twice:
 - **Coalesced batches:** commands from a coalesced batch that come back with one of these codes, or with a G2 "did not run" error, are resent alone.
 - **Client pipelines:** they keep the errors.
 
-- **Code:** `ServerErrors.REJECTED_UNRUN` and `rejectedWithoutRunning`, `CatchAllCommand.Coalescer.sendBatch`.
+- **Code:** `ServerErrors.REJECTED_UNRUN` and `rejectedWithoutRunning`, `Coalescer`.
 - **Live test:** `TopologyChangeTest.multiKeyCommandsWaitOutAMigration`. It fails if coalesced commands start surfacing TRYAGAIN, or if pipelines stop surfacing it (meaning Glide started retrying in batches).
 
 ### G4: A non-atomic batch keeps order; separate requests don't
 
 Glide executes a non-atomic `ClusterBatch` in order on each node, but it can reorder requests submitted separately, even from one thread to one node. This is why a connection has only one backend unit (a single command or a batch) in flight at a time.
 
-- **Code:** `Connection` (class comment, `startUnit`), `CatchAllCommand.executeBatchAsync`.
+- **Code:** `Connection` (class comment, `startUnit`), `Backend.pipeline`.
 - **Live test:** `PipelineOrderingTest`.
 
 ### G5: Unrouted `customCommand` scrambles top-level map replies
 
 Without a route, `ClusterValue.of()` treats any reply whose top level is a map as a multi-node result keyed by node address. It rebuilds the reply as an unordered `HashMap` and decodes its keys as UTF-8, which loses order and corrupts binary keys (valkey-glide #4963). With an explicit single-node route, the reply comes back untouched. Batch results don't go through `ClusterValue`.
 
-- **Code:** `SlotRoutes`, `MapReplyCommands`, `CatchAllCommand.send`.
+- **Code:** `SlotRoutes`, `MapReplyCommands`, `Backend.send`.
 - **Live test:** `DifferentialRepliesTest` (HGETALL, ZRANGE WITHSCORES, XRANGE with binary fields, compared byte for byte with a direct connection).
 
 ### G6: Glide reshapes replies by command name
@@ -122,7 +122,7 @@ While a slot is migrating, the source node answers with ASK for a key that has a
 
 The node rejected the command without running it, so a single command that comes back with a redirect is resent as a one-command batch. Other errors Glide has already retried on this path (TRYAGAIN, CLUSTERDOWN, ...) are not resent, since that would only double the wait during an outage. Worth reporting upstream.
 
-- **Code:** `ServerErrors.isUnfollowedRedirect`, `CatchAllCommand.send` and `sendAsBatch`.
+- **Code:** `ServerErrors.isUnfollowedRedirect`, `Backend.send`.
 - **Live test:** `TopologyChangeTest.askRedirectsDuringAMigrationAreFollowed` (3,000 GETs during a migration). Re-check with `proxy.glide.coalesce-requests=false`, which sends every command alone.
 
 ### G11: One Glide client multiplexes one connection per node
@@ -180,7 +180,7 @@ Key positions come from the legacy `first`/`last`/`step` fields of the COMMAND r
 
 A command that can block holds its connection on the server, so it must not run on Glide's shared multiplexed connection. The list and the timeout positions and units follow the Valkey command reference: BLPOP-style commands take seconds as the last argument, XREAD/XREADGROUP take `BLOCK <ms>`, and WAIT/WAITAOF take ms. So do the replies they send on timeout (V2).
 
-- **Code:** `BlockingCommands`.
+- **Code:** `BlockingCommands`, `BlockingCommandRunner`.
 - **Live test:** `BlockingCommandsTest` (integration).
 
 ### V6: Queue-time errors inside MULTI
@@ -194,5 +194,5 @@ Valkey answers a command queued in MULTI that can't run, and the transaction is 
 
 The proxy checks unknown commands and arity itself, from the COMMAND table, since it queues transactions rather than sending MULTI ahead.
 
-- **Code:** `CommandKeyExtractor.queueError` and `notAllowedInTransaction`, `CatchAllCommand.queueTransactionCommand`, `MultiCommand`, `WatchCommand`.
+- **Code:** `CommandKeyExtractor.queueError` and `notAllowedInTransaction`, `TransactionQueue`, `MultiCommand`, `WatchCommand`.
 - **Live test:** `TransactionFidelityTest` (proxy and a direct node compared byte for byte).

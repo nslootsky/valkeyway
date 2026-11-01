@@ -5,12 +5,9 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import glide.api.GlideClusterClient;
-import glide.api.models.GlideString;
+import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.reply.GlideReplies;
-import io.github.nslootsky.valkeyway.reply.ServerErrors;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
@@ -30,10 +27,12 @@ public class ClusterCommand implements CommandHandler {
     /** Subcommands that must return standalone-mode errors (real standalone servers don't support cluster mode). */
     private static final Set<String> STANDALONE_ERROR_SUBCOMMANDS = Set.of("INFO", "NODES");
 
-    private final GlideClientCache glideClientCache;
+    private final GlideClientCache clients;
+    private final Backend backend;
 
-    public ClusterCommand(GlideClientCache glideClientCache) {
-        this.glideClientCache = glideClientCache;
+    public ClusterCommand(GlideClientCache clients, Backend backend) {
+        this.clients = clients;
+        this.backend = backend;
     }
 
     @Override
@@ -41,22 +40,9 @@ public class ClusterCommand implements CommandHandler {
         if (request.argCount() < 1) {
             return Reply.error("ERR wrong number of arguments for 'cluster' command");
         }
-        if (STANDALONE_ERROR_SUBCOMMANDS.contains(request.argString(0).toUpperCase())) {
+        if (STANDALONE_ERROR_SUBCOMMANDS.contains(request.argString(0).toUpperCase(java.util.Locale.ROOT))) {
             return Reply.error("ERR This instance has cluster support disabled");
         }
-        try {
-            GlideClusterClient client = glideClientCache.getClient(request.connection().db());
-            byte[][] args = request.args();
-            GlideString[] cmdArgs = new GlideString[args.length];
-            for (int i = 0; i < args.length; i++) {
-                cmdArgs[i] = GlideString.of(args[i]);
-            }
-            return GlideReplies.toReply(client.customCommand(cmdArgs).get());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Reply.error("ERR interrupted");
-        } catch (Exception e) {
-            return ServerErrors.error(e);
-        }
+        return backend.callAndWait(clients.getClient(request.connection().db()), request.args());
     }
 }

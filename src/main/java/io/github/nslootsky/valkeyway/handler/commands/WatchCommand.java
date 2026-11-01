@@ -5,12 +5,14 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import glide.api.models.GlideString;
+import io.github.nslootsky.valkeyway.backend.GlideArgs;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.ServerErrors;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.Request;
+import io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor;
+import io.github.nslootsky.valkeyway.transaction.TransactionQueue;
 import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 import io.github.nslootsky.valkeyway.transaction.WatchSession;
 
@@ -44,8 +46,7 @@ public class WatchCommand implements CommandHandler {
             }
             if (connection.inTransaction()) {
                 // Like Valkey 9, this also discards the transaction (EXEC answers EXECABORT).
-                connection.transactionError(CatchAllCommand.EXECABORT);
-                return Reply.error(io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor.notAllowedInTransaction("watch"));
+                return TransactionQueue.reject(connection, CommandKeyExtractor.notAllowedInTransaction("watch"));
             }
             return watch(connection, Arrays.copyOfRange(args, 1, args.length));
         }
@@ -77,13 +78,8 @@ public class WatchCommand implements CommandHandler {
             // Keys in another database than the session's; EXEC will abort.
             return Reply.OK;
         }
-        GlideString[] command = new GlideString[keys.length + 1];
-        command[0] = GlideString.of("WATCH");
-        for (int i = 0; i < keys.length; i++) {
-            command[i + 1] = GlideString.of(keys[i]);
-        }
         try {
-            session.client().customCommand(command).get();
+            session.client().customCommand(GlideArgs.of(new String[]{"WATCH"}, keys)).get();
             sessions.watched(session, keys);
             return Reply.OK;
         } catch (InterruptedException e) {

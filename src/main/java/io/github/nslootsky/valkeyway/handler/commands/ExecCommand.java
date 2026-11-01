@@ -7,12 +7,12 @@ package io.github.nslootsky.valkeyway.handler.commands;
 
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterBatch;
-import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.ValkeywayProperties.CrossSlot;
+import io.github.nslootsky.valkeyway.backend.Backend;
+import io.github.nslootsky.valkeyway.backend.GlideArgs;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.GlideReplies;
-import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
 import io.github.nslootsky.valkeyway.reply.ServerErrors;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
@@ -111,12 +111,8 @@ public class ExecCommand implements CommandHandler {
         try {
             GlideClusterClient client = watch != null ? watch.client() : glideClientCache.getClient(connection.db());
             ClusterBatch batch = new ClusterBatch(!crossSlot).withBinaryOutput();
-            for (byte[][] cmdBytes : buffered) {
-                GlideString[] cmdArgs = new GlideString[cmdBytes.length];
-                for (int i = 0; i < cmdBytes.length; i++) {
-                    cmdArgs[i] = GlideString.of(cmdBytes[i]);
-                }
-                batch.customCommand(cmdArgs);
+            for (byte[][] command : buffered) {
+                batch.customCommand(GlideArgs.of(command));
             }
 
             log.debug("EXEC {} commands crossSlot={} watched={}", buffered.size(), crossSlot, watch != null);
@@ -130,8 +126,7 @@ public class ExecCommand implements CommandHandler {
             }
             List<Reply> replies = new ArrayList<>(results.length);
             for (int i = 0; i < results.length; i++) {
-                Object value = i < buffered.size() ? Resp2Shapes.shape(buffered.get(i), results[i]) : results[i];
-                replies.add(GlideReplies.toReply(value));
+                replies.add(i < buffered.size() ? Backend.toReply(buffered.get(i), results[i]) : GlideReplies.toReply(results[i]));
             }
             return new Reply.Array(replies);
         } catch (InterruptedException e) {
