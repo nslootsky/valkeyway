@@ -51,6 +51,19 @@ To build the Docker image: `docker build -t valkeyway:latest .`
 - **`TopologyChangeTest`:** slot migrations, failovers and killed or hung primaries under live traffic.
 - **`UpstreamAssumptionsTest`:** keeps [UPSTREAM_ASSUMPTIONS.md](UPSTREAM_ASSUMPTIONS.md) and the `[upstream:ID]` tags in the code in step.
 
+## Releasing
+
+1. Set the version in `pom.xml`, and add its section to `CHANGELOG.md` (`## [x.y.z] - date`, with an "Upgrading" part for anything users must know).
+2. Merge to `main`.
+3. Tag it: `git tag vx.y.z && git push origin vx.y.z`.
+
+The tag runs `.github/workflows/release.yml`:
+- it builds and tests the proxy, and checks the tag against the pom version;
+- it pushes `ghcr.io/nslootsky/valkeyway:x.y.z` and `:latest` for linux/amd64 and linux/arm64;
+- it creates the GitHub release with the jar and the changelog section.
+
+GitHub creates a new container package as private, so after the first release, make it public once under the package's settings.
+
 ## Tech stack
 
 Java 25, Spring Boot 4.1, Netty 4.2 (client-facing server, native epoll on Linux), valkey-glide 2.5 (cluster client), Micrometer and Spring Boot Actuator.

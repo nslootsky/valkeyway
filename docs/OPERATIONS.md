@@ -5,15 +5,15 @@
 ```bash
 # Docker, against an existing cluster
 docker run -d --name valkeyway -p 6379:6379 -p 6380:6380 \
-  nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+  ghcr.io/nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 
-# Or the jar (Java 25)
+# Or the jar (Java 25), from the GitHub release
 java -jar valkeyway.jar --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 ```
 
 Clients connect on port 6379. The management port, 6380, serves health checks and metrics. Settings are described in [CONFIGURATION.md](CONFIGURATION.md), and passwords and TLS in [SECURITY.md](SECURITY.md).
 
-The image runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
+The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
 
 ## Health and metrics
 
