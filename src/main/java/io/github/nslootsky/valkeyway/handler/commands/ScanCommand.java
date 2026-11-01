@@ -5,17 +5,17 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.annotation.Command;
-import com.github.tonivade.resp.annotation.ParamLength;
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
 import glide.api.GlideClusterClient;
 import glide.api.models.commands.scan.ClusterScanCursor;
 import glide.api.models.commands.scan.ScanOptions;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
-import io.github.nslootsky.valkeyway.handler.SessionState;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.reply.GlideReplies;
+import io.github.nslootsky.valkeyway.reply.ServerErrors;
 import io.github.nslootsky.valkeyway.scan.ScanCursorStore;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Connection;
+import io.github.nslootsky.valkeyway.server.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,12 +24,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * SCAN command handler. Iterates across all cluster nodes.
- * Cursors are UUIDs during iteration, "0" on completion.
+ * SCAN: iterates across all cluster nodes. Cursors are UUIDs during iteration, "0" on completion.
  */
-@Command("scan")
-@ParamLength(value = 1, option = 10)
-public class ScanCommand implements RespCommand {
+public class ScanCommand implements CommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ScanCommand.class);
     public static final int SCAN_MAX_RESULTS = 5000;
@@ -43,23 +40,23 @@ public class ScanCommand implements RespCommand {
     }
 
     @Override
-    public RedisToken execute(Request request) {
-        var session = request.getSession();
-        if (request.getLength() < 1) {
-            return RedisToken.error("ERR wrong number of arguments for 'scan' command");
+    public Reply execute(Request request) {
+        Connection connection = request.connection();
+        if (request.argCount() < 1) {
+            return Reply.error("ERR wrong number of arguments for 'scan' command");
         }
 
-        String cursorArg = request.getParam(0).toString();
+        String cursorArg = request.argString(0);
         String matchPattern = null;
         long count = 10;
 
-        for (int i = 1; i < request.getLength(); i++) {
-            String opt = request.getParam(i).toString().toUpperCase();
-            if ("MATCH".equals(opt) && i + 1 < request.getLength()) {
-                matchPattern = request.getParam(++i).toString();
-            } else if ("COUNT".equals(opt) && i + 1 < request.getLength()) {
+        for (int i = 1; i < request.argCount(); i++) {
+            String opt = request.argString(i).toUpperCase();
+            if ("MATCH".equals(opt) && i + 1 < request.argCount()) {
+                matchPattern = request.argString(++i);
+            } else if ("COUNT".equals(opt) && i + 1 < request.argCount()) {
                 try {
-                    count = Long.parseLong(request.getParam(++i).toString());
+                    count = Long.parseLong(request.argString(++i));
                 } catch (NumberFormatException e) {
                     // ignore invalid count
                 }
@@ -69,30 +66,28 @@ public class ScanCommand implements RespCommand {
         ClusterScanCursor scanCursor;
         if ("0".equals(cursorArg)) {
             scanCursor = ClusterScanCursor.initialCursor();
-            String currentCursorId = SessionState.getScanCursorId(session);
+            String currentCursorId = connection.scanCursorId();
             if (currentCursorId != null) {
                 scanCursorStore.removeCursor(currentCursorId);
-                SessionState.clearScanCursorId(session);
+                connection.scanCursorId(null);
             }
         } else {
             scanCursor = scanCursorStore.getCursor(cursorArg);
             if (scanCursor == null) {
-                return RedisToken.error("ERR invalid SCAN cursor");
+                return Reply.error("ERR invalid SCAN cursor");
             }
         }
 
-        ScanOptions.ScanOptionsBuilder<?, ?> optionsBuilder =
-                ScanOptions.builder().count(count);
+        ScanOptions.ScanOptionsBuilder<?, ?> optionsBuilder = ScanOptions.builder().count(count);
         if (matchPattern != null) {
             optionsBuilder.matchPattern(matchPattern);
         }
-        ScanOptions options =
-                optionsBuilder.build();
+        ScanOptions options = optionsBuilder.build();
 
         log.debug("SCAN cursor={} match={} count={}", cursorArg, matchPattern, count);
 
         try {
-            GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
+            GlideClusterClient client = glideClientCache.getClient(connection.db());
             List<Object> allKeys = new ArrayList<>();
             ClusterScanCursor currentCursor = scanCursor;
 
@@ -113,24 +108,24 @@ public class ScanCommand implements RespCommand {
             if (currentCursor.isFinished()) {
                 nextCursorStr = "0";
                 currentCursor.releaseCursorHandle();
-                String cursorId = SessionState.getScanCursorId(session);
+                String cursorId = connection.scanCursorId();
                 if (cursorId != null) {
                     scanCursorStore.removeCursor(cursorId);
-                    SessionState.clearScanCursorId(session);
+                    connection.scanCursorId(null);
                 }
             } else {
                 nextCursorStr = scanCursorStore.createCursor(currentCursor);
-                SessionState.setScanCursorId(session, nextCursorStr);
+                connection.scanCursorId(nextCursorStr);
             }
 
             log.debug("SCAN OK keys={} finished={} cursor={}", allKeys.size(), currentCursor.isFinished(), nextCursorStr);
-            return RedisToken.array(
-                    RedisToken.string(nextCursorStr),
-                    TokenUtils.toRedisArray(allKeys.toArray())
-            );
+            return Reply.array(Reply.bulk(nextCursorStr), GlideReplies.toReply(allKeys.toArray()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Reply.error("ERR interrupted");
         } catch (Exception e) {
-            log.error("SCAN ERR {}", e.getMessage());
-            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
+            log.debug("SCAN ERR {}", e.getMessage());
+            return ServerErrors.error(e);
         }
     }
 }

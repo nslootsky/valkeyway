@@ -5,13 +5,12 @@
 
 package io.github.nslootsky.valkeyway;
 
-import com.github.tonivade.resp.RespServer;
 import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
-import io.github.nslootsky.valkeyway.handler.ValkeywayCommandSuite;
+import io.github.nslootsky.valkeyway.handler.ValkeywayCommands;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
 import io.github.nslootsky.valkeyway.scan.ScanCursorStore;
-import jakarta.annotation.PreDestroy;
+import io.github.nslootsky.valkeyway.server.RespServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -29,8 +28,6 @@ public class ValkeywayApplication {
 
     private static final Logger log = LoggerFactory.getLogger(ValkeywayApplication.class);
 
-    private RespServer server;
-
     static void main(String[] args) {
         SpringApplication.run(ValkeywayApplication.class, args);
     }
@@ -40,27 +37,16 @@ public class ValkeywayApplication {
         return new ScanCursorStore();
     }
 
-    @Bean
+    @Bean(destroyMethod = "close")
     RespServer respServer(ValkeywayProperties props, GlideClientCache glideClientCache, ScanCursorStore scanCursorStore,
-                          MetricsCollector metrics, BlockingClientPool blockingPool) {
-        ValkeywayCommandSuite commandSuite = new ValkeywayCommandSuite(glideClientCache, scanCursorStore, metrics, blockingPool);
-        server = RespServer.builder()
-                .host(props.host())
-                .port(props.port())
-                .commands(commandSuite)
-                .parallelExecution()
-                .build();
-        log.info("Starting proxy on {}:{}", props.host(), props.port());
+                          MetricsCollector metrics, BlockingClientPool blockingPool) throws InterruptedException {
+        ValkeywayProperties.Clients clients = props.clients();
+        RespServer server = new RespServer(
+                new RespServer.Settings(props.host(), props.port(), clients.ioThreads(), clients.maxClients(),
+                        clients.timeoutSeconds()),
+                ValkeywayCommands.create(glideClientCache, scanCursorStore, metrics, blockingPool));
         server.start();
         log.info("Proxy ready");
         return server;
-    }
-
-    @PreDestroy
-    void stopServer() {
-        if (server != null) {
-            log.info("Stopping proxy server");
-            server.stop();
-        }
     }
 }

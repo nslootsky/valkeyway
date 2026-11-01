@@ -9,7 +9,7 @@
 
 A RESP proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone Valkey instance.
 
-ValkeyWay is a Java 25 + Spring Boot proxy that sits between non-cluster-aware clients and a Valkey/Redis cluster. It uses [valkey-glide](https://github.com/valkey-io/valkey-glide) for cluster routing, MOVED/ASK handling, and multi-slot command splitting, and [resp-server](https://github.com/tonivade/resp-server) for the client-facing RESP protocol.
+ValkeyWay is a Java 25 + Spring Boot proxy that sits between non-cluster-aware clients and a Valkey/Redis cluster. It uses [valkey-glide](https://github.com/valkey-io/valkey-glide) for cluster routing, MOVED/ASK handling, and multi-slot command splitting, and its own Netty-based RESP server for clients.
 
 Clients connect to ValkeyWay on port 6379 and interact with the cluster as if it were a standalone server.
 
@@ -47,25 +47,21 @@ Client (non-cluster-aware)
 ┌──────────────────────────────────────┐
 │  ValkeyWay :6379                     │
 │                                      │
-│  resp-server library                 │
-│    ├─ RESP server (Netty-based)      │
-│    ├─ Command routing                │
-│    └─ Per-session state management   │
+│  RESP server (Netty, epoll/NIO)      │
+│    ├─ RespDecoder / ReplyEncoder     │
+│    ├─ Connection (per-client state;  │
+│    │   commands run in order on a    │
+│    │   virtual thread)               │
+│    └─ CommandTable                   │
+│        ├─ PING / ECHO / TIME / QUIT  │
+│        ├─ SELECT, MULTI/EXEC/DISCARD │
+│        ├─ SCAN, INFO, HELLO          │
+│        ├─ CLUSTER, COMMAND, PROXY    │
+│        └─ CatchAllCommand            │
+│            └─ customCommand()        │
 │                                      │
-│    ├─ ValkeywayCommandSuite          │
-│    │   ├─ SelectCommand              │
-│    │   ├─ MultiCommand / ExecCommand │
-│    │   ├─ DiscardCommand             │
-│    │   ├─ ScanCommand                │
-│    │   ├─ InfoCommand                │
-│    │   ├─ HelloCommand               │
-│    │   ├─ ClusterCommand             │
-│    │   ├─ CommandCommand             │
-│    │   ├─ ValkeywayAdminCommand      │
-│    │   └─ CatchAllCommand            │
-│    │       └─ customCommand()        │
-│    │                                 │
-│    ├─ SessionState (per-session)     │
+│    ├─ BlockingClientPool (BLPOP...)  │
+│    ├─ Resp2Shapes / GlideReplies     │
 │    ├─ ScanCursorStore (TTL + max)    │
 │    ├─ GlideClientCache               │
 │    ├─ MetricsCollector               │
@@ -103,6 +99,10 @@ proxy:
   blocking-pool:                # Dedicated backend clients for BLPOP, XREAD BLOCK, WAIT, ...
     max-size: 64                # Max blocking commands running at once; more wait for a free client
     idle-timeout-seconds: 60    # Close a pooled client after this long unused
+  clients:
+    max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
+    timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)
+    io-threads: 0               # Network threads; 0 = one per CPU core
 
 management:
   server:
@@ -214,7 +214,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 - Java 25
 - Spring Boot 4.1.2
-- resp-server (client-facing RESP server)
+- Netty 4.2 (client-facing RESP server; native epoll on Linux)
 - valkey-glide 2.5.3 (cluster client)
 - Micrometer + Spring Boot Actuator (metrics and health)
 - Maven Wrapper
@@ -224,8 +224,9 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error
-- Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, WAIT, etc.) run on a pool of dedicated backend clients (`proxy.blocking-pool`), so they don't hold up other clients' commands to the same node. While blocked they still occupy one of the proxy's network threads, which can delay other clients sharing that thread
-- Integer replies above 2^31 are truncated, and a WATCH-aborted EXEC returns a null bulk string instead of a null array (limits of the resp-server library). This also affects `GEOSEARCH ... WITHHASH`
+- Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, WAIT, etc.) run on a pool of dedicated backend clients (`proxy.blocking-pool`), so they don't hold up other clients
+- Pipelined commands from one connection are executed one at a time (replies are still batched)
 - Set replies (SMEMBERS, SINTER, ...) contain the right members but not necessarily in the server's iteration order
 - Pub/Sub commands (SUBSCRIBE, PSUBSCRIBE) are not supported
+- RESP2 only (HELLO 3 is answered with protocol 2)
 - No TLS support

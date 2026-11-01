@@ -5,29 +5,20 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.annotation.Command;
-import com.github.tonivade.resp.annotation.ParamLength;
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
 import glide.api.GlideClusterClient;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
-import io.github.nslootsky.valkeyway.handler.SessionState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.reply.ServerErrors;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Request;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * PROXY admin command handler. Supports subcommands: CLUSTER INFO, CONFIG GET/SET,
- * STATS, FLUSHCLIENTS, CLIENTINFO.
+ * PROXY admin command: CLUSTER INFO, CONFIG GET/SET, STATS, FLUSHCLIENTS, CLIENTINFO.
  */
-@Command("proxy")
-@ParamLength(value = 1, option = 10)
-public class ValkeywayAdminCommand implements RespCommand {
-
-    private static final Logger log = LoggerFactory.getLogger(ValkeywayAdminCommand.class);
+public class ValkeywayAdminCommand implements CommandHandler {
 
     private final GlideClientCache glideClientCache;
 
@@ -42,103 +33,63 @@ public class ValkeywayAdminCommand implements RespCommand {
     }
 
     @Override
-    public RedisToken execute(Request request) {
-        if (request.getLength() < 1) {
-            log.debug("PROXY ERR wrong number of arguments");
-            return RedisToken.error("ERR wrong number of arguments for 'proxy' command");
+    public Reply execute(Request request) {
+        if (request.argCount() < 1) {
+            return Reply.error("ERR wrong number of arguments for 'proxy' command");
         }
-
-        String subCmd = request.getParam(0).toString().toUpperCase();
-        log.debug("PROXY subCmd={}", subCmd);
-
-        if ("CLUSTER".equals(subCmd) && request.getLength() >= 2 && "INFO".equalsIgnoreCase(request.getParam(1).toString())) {
+        String subCmd = request.argString(0).toUpperCase();
+        if ("CLUSTER".equals(subCmd) && request.argCount() >= 2 && "INFO".equalsIgnoreCase(request.argString(1))) {
             return handleProxyClusterInfo(request);
-        } else if ("CONFIG".equals(subCmd) && request.getLength() >= 2) {
+        } else if ("CONFIG".equals(subCmd) && request.argCount() >= 2) {
             return handleProxyConfig(request);
         } else if ("STATS".equals(subCmd)) {
             return handleProxyStats();
         } else if ("FLUSHCLIENTS".equals(subCmd)) {
             return handleProxyFlushClients();
-        } else if ("CLIENTINFO".equals(subCmd) && request.getLength() >= 2) {
-            return handleProxyClientInfo(request);
-        } else {
-            log.debug("PROXY ERR unknown subcommand={}", subCmd);
-            return RedisToken.error("ERR unknown proxy subcommand");
+        } else if ("CLIENTINFO".equals(subCmd) && request.argCount() >= 2) {
+            return Reply.bulk("Client " + request.argString(1) + " info");
         }
+        return Reply.error("ERR unknown proxy subcommand");
     }
 
-    private RedisToken handleProxyClusterInfo(Request request) {
-        log.debug("PROXY CLUSTER INFO");
+    private Reply handleProxyClusterInfo(Request request) {
         try {
-            GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
-            return RedisToken.string(client.clusterInfo().get());
+            GlideClusterClient client = glideClientCache.getClient(request.connection().db());
+            return Reply.bulk(client.clusterInfo().get());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Reply.error("ERR interrupted");
         } catch (Exception e) {
-            log.error("PROXY CLUSTER INFO ERR {}", e.getMessage());
-            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
+            return ServerErrors.error(e);
         }
     }
 
-    private RedisToken handleProxyConfig(Request request) {
-        if (request.getLength() < 3) {
-            log.debug("PROXY CONFIG ERR wrong number of arguments");
-            return RedisToken.error("ERR wrong number of arguments for 'proxy config' command");
+    private Reply handleProxyConfig(Request request) {
+        if (request.argCount() < 3) {
+            return Reply.error("ERR wrong number of arguments for 'proxy config' command");
         }
-        String action = request.getParam(1).toString().toUpperCase();
-        String key = request.getParam(2).toString();
-        log.debug("PROXY CONFIG action={} key={}", action, key);
-
+        String action = request.argString(1).toUpperCase();
+        String key = request.argString(2);
         if ("GET".equals(action)) {
-            String value = getProxyConfig(key);
-            if (value != null) {
-                log.debug("PROXY CONFIG GET OK value={}", value);
-                return RedisToken.array(RedisToken.string(key), RedisToken.string(value));
-            } else {
-                return RedisToken.array();
-            }
-        } else if ("SET".equals(action) && request.getLength() >= 4) {
-            String value = request.getParam(3).toString();
-            setProxyConfig(key, value);
-            log.debug("PROXY CONFIG SET OK value={}", value);
-            return RedisToken.responseOk();
-        } else {
-            log.debug("PROXY CONFIG ERR wrong number of arguments");
-            return RedisToken.error("ERR wrong number of arguments for 'proxy config' command");
+            String value = proxyConfig.getOrDefault(key, defaultConfig.get(key));
+            return value != null ? Reply.array(Reply.bulk(key), Reply.bulk(value)) : Reply.EMPTY_ARRAY;
+        } else if ("SET".equals(action) && request.argCount() >= 4) {
+            proxyConfig.put(key, request.argString(3));
+            return Reply.OK;
         }
+        return Reply.error("ERR wrong number of arguments for 'proxy config' command");
     }
 
-    private String getProxyConfig(String key) {
-        return proxyConfig.getOrDefault(key, defaultConfig.get(key));
-    }
-
-    private void setProxyConfig(String key, String value) {
-        proxyConfig.put(key, value);
-    }
-
-    private RedisToken handleProxyStats() {
-        log.debug("PROXY STATS");
-        String stats = """
+    private Reply handleProxyStats() {
+        return Reply.bulk("""
                 cluster_nodes: 6\r
                 cluster_state: ok\r
                 proxy_uptime: running\r
-                """;
-        return RedisToken.string(stats);
+                """);
     }
 
-    private RedisToken handleProxyFlushClients() {
-        log.debug("PROXY FLUSHCLIENTS");
-        try {
-            glideClientCache.closeAll();
-            log.debug("PROXY FLUSHCLIENTS OK");
-            return RedisToken.status("Flushed all clients");
-        } catch (Exception e) {
-            log.error("PROXY FLUSHCLIENTS ERR {}", e.getMessage());
-            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
-        }
-    }
-
-    private RedisToken handleProxyClientInfo(Request request) {
-        String clientId = request.getParam(1).toString();
-        log.debug("PROXY CLIENTINFO clientId={}", clientId);
-        return RedisToken.string("Client " + clientId + " info");
+    private Reply handleProxyFlushClients() {
+        glideClientCache.closeAll();
+        return new Reply.Simple("Flushed all clients");
     }
 }

@@ -19,7 +19,8 @@ public record ValkeywayProperties(
     int port,
     List<String> clusterNodes,
     long connectTimeoutMs,
-    BlockingPool blockingPool
+    BlockingPool blockingPool,
+    Clients clients
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
@@ -27,6 +28,22 @@ public record ValkeywayProperties(
         if (clusterNodes == null || clusterNodes.isEmpty()) throw new IllegalArgumentException("clusterNodes required");
         connectTimeoutMs = Math.max(connectTimeoutMs, 500);
         if (blockingPool == null) blockingPool = new BlockingPool(0, 0);
+        if (clients == null) clients = new Clients(0, 0, 0);
+    }
+
+    /**
+     * Client connection handling. Prefix: proxy.clients.*
+     *
+     * @param maxClients     connections accepted at once; more get an error (default 10000, like Valkey)
+     * @param timeoutSeconds close a client idle this long; 0 = never (default, like Valkey's timeout 0)
+     * @param ioThreads      network event-loop threads; 0 = one per CPU core
+     */
+    public record Clients(int maxClients, long timeoutSeconds, int ioThreads) {
+        public Clients {
+            if (maxClients <= 0) maxClients = 10_000;
+            if (timeoutSeconds < 0) timeoutSeconds = 0;
+            if (ioThreads <= 0) ioThreads = Runtime.getRuntime().availableProcessors();
+        }
     }
 
     /**

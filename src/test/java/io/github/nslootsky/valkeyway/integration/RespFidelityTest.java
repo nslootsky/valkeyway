@@ -117,7 +117,7 @@ class RespFidelityTest extends IntegrationTestBase {
 
             a.call("MULTI");
             a.call("SET", "fid:w", "fromA");
-            assertNull(a.call("EXEC"));
+            assertEquals(RawRespClient.NULL_ARRAY, a.call("EXEC"), "aborted EXEC is a null array");
             assertEquals("fromB", a.call("GET", "fid:w"));
         }
     }

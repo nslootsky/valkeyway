@@ -5,20 +5,15 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Request;
 
 /**
- * INFO command handler. Returns proxy-specific info with role:master
- * to be compatible with Glide's STANDARD mode detection.
+ * INFO: proxy-specific info with role:master, compatible with Glide's standalone mode detection.
  */
-public class InfoCommand implements RespCommand {
-
-    private static final Logger log = LoggerFactory.getLogger(InfoCommand.class);
+public class InfoCommand implements CommandHandler {
 
     private final MetricsCollector metrics;
 
@@ -27,26 +22,13 @@ public class InfoCommand implements RespCommand {
     }
 
     @Override
-    public RedisToken execute(Request request) {
-        String section = request.getLength() > 0 ? request.getParam(0).toString().toUpperCase() : "ALL";
-        log.debug("INFO section={}", section);
-        try {
-            return handleInfo();
-        } catch (Exception e) {
-            log.error("INFO ERR {}", e.getMessage());
-            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
-        }
+    public Reply execute(Request request) {
+        String info = "# Replication\r\n"
+                + "role:master\r\n"
+                + "connected_slaves:0\r\n"
+                + "# Stats\r\n"
+                + "total_commands_processed:" + (long) metrics.getTotalCommands() + "\r\n"
+                + "total_errors:" + (long) metrics.getTotalErrors() + "\r\n";
+        return Reply.bulk(info);
     }
-
-    private RedisToken handleInfo() {
-        String sb = "# Replication\r\n" +
-                "role:master\r\n" +
-                "connected_slaves:0\r\n" +
-                "# Stats\r\n" +
-                "total_commands_processed:" + metrics.getTotalCommands() + "\r\n" +
-                "total_errors:" + metrics.getTotalErrors() + "\r\n";
-        return RedisToken.string(sb);
-    }
-
-
 }

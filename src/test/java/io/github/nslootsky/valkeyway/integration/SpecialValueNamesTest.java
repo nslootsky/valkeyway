@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Ensures that actual keys/values named "optional", "multiple", or "multiple_token"
  * are returned as bulk strings, not status tokens. These names are special-cased in
- * TokenUtils for command docs but must not affect normal data operations.
+ * the COMMAND DOCS reply conversion but must not affect normal data operations.
  */
 class SpecialValueNamesTest extends IntegrationTestBase {
 
