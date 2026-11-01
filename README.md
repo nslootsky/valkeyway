@@ -99,6 +99,8 @@ proxy:
   blocking-pool:                # Dedicated backend clients for BLPOP, XREAD BLOCK, WAIT, ...
     max-size: 64                # Max blocking commands running at once; more wait for a free client
     idle-timeout-seconds: 60    # Close a pooled client after this long unused
+  glide:
+    inflight-requests-limit: 50000  # Outstanding requests per Glide client (Glide's default is 1000)
   clients:
     max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
     timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)

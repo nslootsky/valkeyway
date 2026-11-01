@@ -34,10 +34,12 @@ public class GlideClientCache {
     private final Cache<Integer, GlideClusterClient> cache;
     private final List<String> clusterNodes;
     private final int requestTimeout;
+    private final int inflightRequestsLimit;
 
     public GlideClientCache(ValkeywayProperties props) {
         this.clusterNodes = props.clusterNodes();
         this.requestTimeout = (int) props.connectTimeoutMs();
+        this.inflightRequestsLimit = props.glide().inflightRequestsLimit();
 
         this.cache = Caffeine.newBuilder()
                 .expireAfterAccess(30, TimeUnit.SECONDS)
@@ -57,6 +59,7 @@ public class GlideClientCache {
     private GlideClusterClientConfiguration buildConfig(int db) {
         var builder = GlideClusterClientConfiguration.builder()
                 .requestTimeout(requestTimeout)
+                .inflightRequestsLimit(inflightRequestsLimit)
                 .databaseId(db);
 
         for (String node : clusterNodes) {

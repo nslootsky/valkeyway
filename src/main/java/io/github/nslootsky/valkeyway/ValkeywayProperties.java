@@ -20,7 +20,8 @@ public record ValkeywayProperties(
     List<String> clusterNodes,
     long connectTimeoutMs,
     BlockingPool blockingPool,
-    Clients clients
+    Clients clients,
+    Glide glide
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
@@ -29,6 +30,21 @@ public record ValkeywayProperties(
         connectTimeoutMs = Math.max(connectTimeoutMs, 500);
         if (blockingPool == null) blockingPool = new BlockingPool(0, 0);
         if (clients == null) clients = new Clients(0, 0, 0);
+        if (glide == null) glide = new Glide(0);
+    }
+
+    /**
+     * Backend (Glide) client settings. Prefix: proxy.glide.*
+     *
+     * @param inflightRequestsLimit requests one Glide client may have outstanding (default 50000).
+     *        Glide's own default is 1000, and one Glide client per database is shared by every proxy
+     *        connection, so with the default more than 1000 busy clients get "Client reached maximum
+     *        inflight requests" errors. Memory stays bounded by the proxy's per-connection backpressure.
+     */
+    public record Glide(int inflightRequestsLimit) {
+        public Glide {
+            if (inflightRequestsLimit <= 0) inflightRequestsLimit = 50_000;
+        }
     }
 
     /**
