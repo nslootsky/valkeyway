@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway;
 
 import com.github.tonivade.resp.RespServer;
+import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.ValkeywayCommandSuite;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
@@ -40,8 +41,9 @@ public class ValkeywayApplication {
     }
 
     @Bean
-    RespServer respServer(ValkeywayProperties props, GlideClientCache glideClientCache, ScanCursorStore scanCursorStore, MetricsCollector metrics) {
-        ValkeywayCommandSuite commandSuite = new ValkeywayCommandSuite(glideClientCache, scanCursorStore, metrics);
+    RespServer respServer(ValkeywayProperties props, GlideClientCache glideClientCache, ScanCursorStore scanCursorStore,
+                          MetricsCollector metrics, BlockingClientPool blockingPool) {
+        ValkeywayCommandSuite commandSuite = new ValkeywayCommandSuite(glideClientCache, scanCursorStore, metrics, blockingPool);
         server = RespServer.builder()
                 .host(props.host())
                 .port(props.port())

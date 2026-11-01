@@ -7,6 +7,7 @@ package io.github.nslootsky.valkeyway.handler;
 
 import com.github.tonivade.resp.command.CommandSuite;
 import com.github.tonivade.resp.command.RespCommand;
+import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.commands.*;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
@@ -20,9 +21,10 @@ public class ValkeywayCommandSuite extends CommandSuite {
 
     private final CatchAllCommand catchAllCommand;
 
-    public ValkeywayCommandSuite(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore, MetricsCollector metrics) {
+    public ValkeywayCommandSuite(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore, MetricsCollector metrics,
+                                 BlockingClientPool blockingPool) {
         super();
-        this.catchAllCommand = new CatchAllCommand(glideClientCache, metrics);
+        this.catchAllCommand = new CatchAllCommand(glideClientCache, metrics, blockingPool);
 
         addCommand("select", new SelectCommand());
         addCommand("multi", new MultiCommand());
