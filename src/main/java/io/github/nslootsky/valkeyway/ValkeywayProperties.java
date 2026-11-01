@@ -5,20 +5,24 @@
 
 package io.github.nslootsky.valkeyway;
 
+import io.github.nslootsky.valkeyway.server.TlsContext;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Configuration properties for the proxy.
  * Prefix: proxy.*
  *
+ * @param port plain-text port for clients; 0 = none (then {@code tls.port} must be set), like Valkey
  * @param requestTimeoutMs timeout per backend request, including Glide's retries (default 2000, at
  *        least 500)
  * @param connectTimeoutMs the old name of {@code request-timeout-ms}, still accepted; reads back as
  *        the effective request timeout
  */
+@SuppressWarnings("deprecation") // connectTimeoutMs, read only to honor the old name
 @ConfigurationProperties(prefix = "proxy")
 public record ValkeywayProperties(
     String host,
@@ -30,11 +34,19 @@ public record ValkeywayProperties(
     Clients clients,
     Glide glide,
     Transactions transactions,
-    NodeAdmin nodeAdminCommands
+    NodeAdmin nodeAdminCommands,
+    Auth auth,
+    Tls tls,
+    Backend backend
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
-        if (port <= 0 || port > 65535) throw new IllegalArgumentException("Invalid port");
+        if (auth == null) auth = new Auth(null, null);
+        if (tls == null) tls = new Tls(0, null, null, null, null, null, null);
+        if (backend == null) backend = new Backend(null, null, null);
+        if (port < 0 || port > 65535 || (port == 0 && tls.port() == 0)) {
+            throw new IllegalArgumentException("Invalid port (0 is allowed only with a proxy.tls.port)");
+        }
         if (clusterNodes == null || clusterNodes.isEmpty()) throw new IllegalArgumentException("clusterNodes required");
         if (requestTimeoutMs <= 0 && connectTimeoutMs > 0) {
             LoggerFactory.getLogger(ValkeywayProperties.class).warn(
@@ -143,6 +155,69 @@ public record ValkeywayProperties(
             if (acquireTimeoutMs <= 0) acquireTimeoutMs = 2000;
         }
     }
+
+    /**
+     * Client authentication. Prefix: proxy.auth.*
+     *
+     * @param password the default user's password, like Valkey's {@code requirepass}: once set,
+     *        clients must AUTH (or HELLO ... AUTH) before anything else. Unset = no authentication.
+     * @param users    further users and their passwords, for {@code AUTH <user> <password>}. Every
+     *        user can run every command; there are no ACL rules.
+     */
+    public record Auth(String password, Map<String, String> users) {
+        public Auth {
+            if (users == null) users = Map.of();
+        }
+    }
+
+    /**
+     * TLS for clients. Prefix: proxy.tls.*
+     *
+     * @param port        TLS port, alongside {@code proxy.port}; 0 = no TLS (default)
+     * @param certFile    the server certificate chain (PEM)
+     * @param keyFile     its private key (PEM, PKCS#8)
+     * @param keyPassword the key's password, if it is encrypted
+     * @param caFile      CA certificates for verifying client certificates (PEM)
+     * @param clientCerts {@code none} (default), {@code optional} or {@code required}: whether clients
+     *        must present a certificate signed by {@code ca-file} (Valkey's {@code tls-auth-clients})
+     * @param protocols   TLS versions to accept, e.g. {@code TLSv1.2,TLSv1.3}; default the JDK's
+     */
+    public record Tls(int port, String certFile, String keyFile, String keyPassword, String caFile,
+                      TlsContext.ClientCerts clientCerts, List<String> protocols) {
+        public Tls {
+            if (port < 0 || port > 65535) throw new IllegalArgumentException("Invalid proxy.tls.port");
+            if (port > 0 && (certFile == null || keyFile == null)) {
+                throw new IllegalArgumentException("proxy.tls.port needs proxy.tls.cert-file and proxy.tls.key-file");
+            }
+            if (clientCerts == null) clientCerts = TlsContext.ClientCerts.NONE;
+            if (protocols == null) protocols = List.of();
+        }
+    }
+
+    /**
+     * How the proxy connects to the cluster. Prefix: proxy.backend.*
+     *
+     * @param username user for the cluster's AUTH; unset = {@code default}
+     * @param password password for the cluster's AUTH; unset = no AUTH
+     */
+    public record Backend(String username, String password, BackendTls tls) {
+        public Backend {
+            if (tls == null) tls = new BackendTls(false, null, false);
+            if (username != null && password == null) {
+                throw new IllegalArgumentException("proxy.backend.username needs proxy.backend.password");
+            }
+        }
+    }
+
+    /**
+     * TLS to the cluster. Prefix: proxy.backend.tls.*
+     *
+     * @param enabled  connect to the nodes over TLS
+     * @param caFile   CA certificates to trust (PEM); unset = the system's trust store
+     * @param insecure skip certificate verification (self-signed certificates, or names that don't
+     *                 match the nodes' addresses)
+     */
+    public record BackendTls(boolean enabled, String caFile, boolean insecure) {}
 
     /**
      * {@code proxy.node-admin-commands}: commands that administer a single node (SHUTDOWN, REPLICAOF,

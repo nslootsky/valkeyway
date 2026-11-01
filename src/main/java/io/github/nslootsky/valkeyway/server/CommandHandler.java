@@ -29,4 +29,12 @@ public interface CommandHandler {
     default InTransaction inTransaction() {
         return InTransaction.QUEUE;
     }
+
+    /**
+     * Whether a connection that hasn't authenticated yet may run this command (AUTH, HELLO, QUIT
+     * and RESET, like Valkey's {@code no_auth} commands). Everything else gets NOAUTH.
+     */
+    default boolean allowedBeforeAuth() {
+        return false;
+    }
 }

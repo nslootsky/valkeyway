@@ -20,6 +20,11 @@ public class QuitCommand implements CommandHandler {
     }
 
     @Override
+    public boolean allowedBeforeAuth() {
+        return true;
+    }
+
+    @Override
     public Reply execute(Request request) {
         request.connection().closeAfterReply();
         return Reply.OK;

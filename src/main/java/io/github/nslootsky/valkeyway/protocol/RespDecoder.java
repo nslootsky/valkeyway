@@ -28,6 +28,27 @@ public final class RespDecoder extends ByteToMessageDecoder {
     /** Valkey's default proto-max-bulk-len. */
     static final long MAX_BULK = 512L * 1024 * 1024;
 
+    // [upstream:V7]
+    /** Valkey's limits on requests from clients that haven't authenticated (when a password is required). */
+    static final int MAX_ARGS_UNAUTHENTICATED = 10;
+    static final int MAX_BULK_UNAUTHENTICATED = 16 * 1024;
+
+    /** Whether the client must still authenticate; set by the connection. Event loop only. */
+    private boolean unauthenticated;
+
+    public RespDecoder() {
+        this(false);
+    }
+
+    public RespDecoder(boolean unauthenticated) {
+        this.unauthenticated = unauthenticated;
+    }
+
+    /** Applies (or lifts) the limits for clients that haven't authenticated. Event loop only. */
+    public void unauthenticated(boolean unauthenticated) {
+        this.unauthenticated = unauthenticated;
+    }
+
     /** Set after a protocol error: the stream can't be resynchronised, so input is discarded. */
     private boolean failed;
 
@@ -86,6 +107,9 @@ public final class RespDecoder extends ByteToMessageDecoder {
         if (count > MAX_ARGS) {
             throw new ProtocolException("invalid multibulk length");
         }
+        if (unauthenticated && count > MAX_ARGS_UNAUTHENTICATED) {
+            throw new ProtocolException("unauthenticated multibulk length");
+        }
         if (count <= 0) {
             return true; // "*0" / "*-1": nothing to run, as in Valkey
         }
@@ -137,6 +161,9 @@ public final class RespDecoder extends ByteToMessageDecoder {
                 long length = parseLong(in, start + 1, eol, "invalid bulk length");
                 if (length < 0 || length > MAX_BULK) {
                     throw new ProtocolException("invalid bulk length");
+                }
+                if (unauthenticated && length > MAX_BULK_UNAUTHENTICATED) {
+                    throw new ProtocolException("unauthenticated bulk length");
                 }
                 in.readerIndex(eol + 2);
                 bulkLength = (int) length;

@@ -12,11 +12,18 @@ import glide.api.models.configuration.GlideClusterClientConfiguration;
 import glide.api.models.configuration.NodeAddress;
 import glide.api.models.configuration.PeriodicChecksManualInterval;
 import glide.api.models.configuration.RequestRoutingConfiguration.SimpleSingleNodeRoute;
+import glide.api.models.configuration.ServerCredentials;
+import glide.api.models.configuration.TlsAdvancedConfiguration;
 import io.github.nslootsky.valkeyway.ValkeywayProperties;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,8 +57,12 @@ public class BackendClients {
     private final int inflightRequestsLimit;
     private final boolean refreshTopologyFromSeeds;
     private final int topologyCheckSeconds;
+    private final ValkeywayProperties.Backend backend;
+    private final byte[] rootCertificates;
 
     public BackendClients(ValkeywayProperties props) {
+        this.backend = props.backend();
+        this.rootCertificates = readCaFile(backend.tls());
         this.clusterNodes = props.clusterNodes();
         this.requestTimeout = (int) props.requestTimeoutMs();
         this.inflightRequestsLimit = props.glide().inflightRequestsLimit();
@@ -59,12 +70,31 @@ public class BackendClients {
         this.topologyCheckSeconds = props.glide().topologyCheckSeconds();
     }
 
+    private static byte[] readCaFile(ValkeywayProperties.BackendTls tls) {
+        if (tls.caFile() == null) {
+            return null;
+        }
+        try {
+            return Files.readAllBytes(Path.of(tls.caFile()));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Can't read proxy.backend.tls.ca-file " + tls.caFile(), e);
+        }
+    }
+
+    // [upstream:G13]
     // [upstream:G8]
     GlideClusterClientConfiguration buildConfig(int db, List<String> seeds) {
         var builder = GlideClusterClientConfiguration.builder()
                 .requestTimeout(requestTimeout)
                 .inflightRequestsLimit(inflightRequestsLimit)
-                .databaseId(db);
+                .databaseId(db)
+                .useTLS(backend.tls().enabled());
+        if (backend.password() != null) {
+            builder.credentials(ServerCredentials.builder()
+                    .username(backend.username())
+                    .password(backend.password())
+                    .build());
+        }
         for (String node : seeds) {
             int colon = node.lastIndexOf(':');
             builder.address(NodeAddress.builder()
@@ -74,6 +104,12 @@ public class BackendClients {
         }
         var advanced = AdvancedGlideClusterClientConfiguration.builder()
                 .refreshTopologyFromInitialNodes(refreshTopologyFromSeeds);
+        if (backend.tls().enabled()) {
+            advanced.tlsAdvancedConfiguration(TlsAdvancedConfiguration.builder()
+                    .useInsecureTLS(backend.tls().insecure())
+                    .rootCertificates(rootCertificates)
+                    .build());
+        }
         if (topologyCheckSeconds > 0) {
             advanced.periodicChecks(PeriodicChecksManualInterval.builder().durationInSec(topologyCheckSeconds).build());
         }

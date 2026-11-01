@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -151,6 +152,15 @@ public class ValkeywayAdminCommand implements CommandHandler {
         c.put("transactions.cross-slot", props.transactions().crossSlot().name().toLowerCase(Locale.ROOT));
         c.put("transactions.watch-pool.max-size", Integer.toString(props.transactions().watchPool().maxSize()));
         c.put("node-admin-commands", props.nodeAdminCommands().name().toLowerCase(Locale.ROOT));
+        // Passwords are never shown, only whether they are set.
+        c.put("auth.password", props.auth().password() == null || props.auth().password().isEmpty() ? "" : "(set)");
+        c.put("auth.users", String.join(",", new TreeSet<>(props.auth().users().keySet())));
+        c.put("tls.port", Integer.toString(props.tls().port()));
+        c.put("tls.client-certs", props.tls().clientCerts().name().toLowerCase(Locale.ROOT));
+        c.put("backend.username", props.backend().username() == null ? "" : props.backend().username());
+        c.put("backend.password", props.backend().password() == null ? "" : "(set)");
+        c.put("backend.tls.enabled", Boolean.toString(props.backend().tls().enabled()));
+        c.put("backend.tls.insecure", Boolean.toString(props.backend().tls().insecure()));
         return c;
     }
 

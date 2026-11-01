@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.server;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.CompletionException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.protocol.RespDecoder;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
@@ -110,12 +111,16 @@ public final class Connection {
     // Session state.
     private int db;
     private String name;
+    /** The authenticated user, or {@code null} before AUTH when a password is required. */
+    private volatile String user;
     private boolean inTransaction;
     /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
     private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
 
-    Connection(long id, Channel channel, CommandTable commands, Executor executor, ClientRegistry registry) {
+    Connection(long id, Channel channel, CommandTable commands, Executor executor, ClientRegistry registry,
+               boolean authRequired) {
         this.id = id;
+        this.user = authRequired ? null : Users.DEFAULT;
         this.registry = registry;
         this.channel = channel;
         this.loop = channel.eventLoop();
@@ -152,7 +157,7 @@ public final class Connection {
                     break;
                 }
                 Request request = new Request(this, command);
-                CommandHandler handler = commands.lookup(command[0], inTransaction);
+                CommandHandler handler = commands.lookup(command[0], inTransaction, user != null);
                 if (handler instanceof InlineCommandHandler) {
                     waiting.poll();
                     addInline(handler, request);
@@ -202,7 +207,7 @@ public final class Connection {
         byte[][] next;
         while (slots.size() < MAX_IN_FLIGHT && (next = waiting.peek()) != null) {
             Request request = new Request(this, next);
-            CommandHandler h = commands.lookup(next[0], inTransaction);
+            CommandHandler h = commands.lookup(next[0], inTransaction, user != null);
             if (h == handler && handler.canRunAsync(request)) {
                 waiting.poll();
                 Slot slot = new Slot(next[0]);
@@ -489,6 +494,25 @@ public final class Connection {
 
     public String name() {
         return name;
+    }
+
+    /** The authenticated user; {@code null} if the connection hasn't authenticated and must. */
+    public String user() {
+        return user;
+    }
+
+    /**
+     * Authenticates the connection as {@code user}, or ({@code null}) leaves it unauthenticated.
+     * Until it authenticates, requests are also limited in size, as in Valkey.
+     */
+    public void user(String user) {
+        this.user = user;
+        boolean limited = user == null;
+        onLoop(() -> {
+            if (channel.pipeline().get(RespDecoder.class) instanceof RespDecoder decoder) {
+                decoder.unauthenticated(limited);
+            }
+        });
     }
 
     public void name(String name) {

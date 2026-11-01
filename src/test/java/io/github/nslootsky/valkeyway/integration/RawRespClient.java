@@ -42,7 +42,12 @@ public class RawRespClient implements AutoCloseable {
     private final InputStream in;
 
     public RawRespClient(String host, int port) throws IOException {
-        socket = new Socket(host, port);
+        this(new Socket(host, port));
+    }
+
+    /** A client over an already connected socket (e.g. TLS). */
+    public RawRespClient(Socket socket) throws IOException {
+        this.socket = socket;
         socket.setSoTimeout(10_000);
         out = socket.getOutputStream();
         in = new BufferedInputStream(socket.getInputStream());

@@ -21,6 +21,7 @@ import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.ops.MetricsCollector;
 import io.github.nslootsky.valkeyway.server.CommandTable;
+import io.github.nslootsky.valkeyway.server.Users;
 
 /**
  * The proxy's command table: dedicated handlers for commands answered or adapted by the proxy,
@@ -32,7 +33,7 @@ public final class ValkeywayCommands {
 
     public static CommandTable create(BackendClients backendClients, ScanCursorStore scanCursorStore,
                                       MetricsCollector metrics, BlockingClientPool blockingPool,
-                                      WatchClientPool watchPool, ValkeywayProperties props) {
+                                      WatchClientPool watchPool, Users users, ValkeywayProperties props) {
         CommandKeyExtractor keys = new CommandKeyExtractor();
         keys.preloadInBackground(() -> backendClients.getClient(0));
         Backend backend = new Backend(keys);
@@ -65,14 +66,15 @@ public final class ValkeywayCommands {
                 .register("unwatch", new WatchCommand(watches))
                 .register("scan", new ScanCommand(backendClients, scanCursorStore))
                 .register("proxy", new ValkeywayAdminCommand(backendClients, metrics, client, props))
-                .register("hello", new HelloCommand())
+                .register("hello", new HelloCommand(users))
                 .register("info", new InfoCommand(metrics))
                 .register("cluster", new ClusterCommand(backendClients, backend, nodeAdmin))
                 .register("client", client)
                 .register("command", new CommandCommand(backendClients))
                 // Connection-scoped commands: answered here, never sent over the shared backend connections.
-                .register("reset", new ResetCommand(watches))
-                .register("auth", new AuthCommand())
+                .register("reset", new ResetCommand(watches, users))
+                .register("auth", new AuthCommand(users))
+                .register("acl", new AclCommand(catchAll))
                 .register("readonly", LocalCommand.accept(Reply.OK))
                 .register("readwrite", LocalCommand.accept(Reply.OK))
                 .register("monitor", LocalCommand.unsupported("MONITOR", ""));
