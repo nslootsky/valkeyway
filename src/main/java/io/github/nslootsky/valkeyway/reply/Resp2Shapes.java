@@ -7,8 +7,6 @@ package io.github.nslootsky.valkeyway.reply;
 
 import glide.api.models.GlideString;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Locale;
@@ -143,12 +141,12 @@ public final class Resp2Shapes {
 
     /** GEODIST and WITHDIST: Valkey sends "%.4f". */
     private static Object distance(Object value) {
-        return value instanceof Double d ? bulk(fixed(d, 4, false)) : value;
+        return value instanceof Double d ? bulk(DoubleFormat.fixed(d, 4, false)) : value;
     }
 
     /** Longitude/latitude: Valkey sends "%.17Lf" with trailing zeros trimmed. */
     private static Object coordinate(Object value) {
-        return value instanceof Double d ? bulk(fixed(d, 17, true)) : value;
+        return value instanceof Double d ? bulk(DoubleFormat.fixed(d, 17, true)) : value;
     }
 
     private static Object positions(Object value) {
@@ -214,22 +212,6 @@ public final class Resp2Shapes {
     }
 
     // --- helpers ---
-
-    /**
-     * Formats like C's printf("%.Nf") on the exact binary value (round half to even), optionally
-     * trimming trailing zeros the way Valkey's human-readable long double output does.
-     */
-    static String fixed(double d, int decimals, boolean trimZeros) {
-        BigDecimal rounded = new BigDecimal(d).setScale(decimals, RoundingMode.HALF_EVEN);
-        if (trimZeros) {
-            rounded = rounded.stripTrailingZeros();
-            if (rounded.scale() < 0) {
-                rounded = rounded.setScale(0);
-            }
-        }
-        String s = rounded.toPlainString();
-        return s.equals("-0") ? "0" : s;
-    }
 
     private static GlideString bulk(String s) {
         return GlideString.of(s);

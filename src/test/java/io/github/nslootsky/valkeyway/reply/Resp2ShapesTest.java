@@ -41,7 +41,7 @@ class Resp2ShapesTest {
             "-12.5, 17, true, -12.5",
     })
     void fixedFormattingMatchesValkey(double value, int decimals, boolean trim, String expected) {
-        assertEquals(expected, Resp2Shapes.fixed(value, decimals, trim));
+        assertEquals(expected, DoubleFormat.fixed(value, decimals, trim));
     }
 
     @Test
