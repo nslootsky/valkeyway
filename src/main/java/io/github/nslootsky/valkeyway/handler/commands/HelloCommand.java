@@ -17,6 +17,11 @@ import java.util.List;
 public class HelloCommand implements InlineCommandHandler {
 
     @Override
+    public InTransaction inTransaction() {
+        return InTransaction.REJECT;
+    }
+
+    @Override
     public Reply execute(Request request) {
         return new Reply.MapReply(List.of(
                 Reply.bulk("server"), Reply.bulk("valkeyway"),

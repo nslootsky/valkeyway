@@ -15,6 +15,11 @@ import io.github.nslootsky.valkeyway.server.Request;
 public class QuitCommand implements CommandHandler {
 
     @Override
+    public InTransaction inTransaction() {
+        return InTransaction.RUN;
+    }
+
+    @Override
     public Reply execute(Request request) {
         request.connection().closeAfterReply();
         return Reply.OK;

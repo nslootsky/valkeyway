@@ -20,6 +20,11 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ValkeywayAdminCommand implements CommandHandler {
 
+    @Override
+    public InTransaction inTransaction() {
+        return InTransaction.REJECT;
+    }
+
     private final GlideClientCache glideClientCache;
 
     private static final Map<String, String> proxyConfig = new ConcurrentHashMap<>();

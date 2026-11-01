@@ -21,7 +21,8 @@ public record ValkeywayProperties(
     long connectTimeoutMs,
     BlockingPool blockingPool,
     Clients clients,
-    Glide glide
+    Glide glide,
+    Transactions transactions
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
@@ -31,6 +32,7 @@ public record ValkeywayProperties(
         if (blockingPool == null) blockingPool = new BlockingPool(0, 0);
         if (clients == null) clients = new Clients(0, 0, 0);
         if (glide == null) glide = new Glide(0, null, null, 0);
+        if (transactions == null) transactions = new Transactions(null, null);
     }
 
     /**
@@ -92,6 +94,38 @@ public record ValkeywayProperties(
         public BlockingPool {
             if (maxSize <= 0) maxSize = 64;
             if (idleTimeoutSeconds <= 0) idleTimeoutSeconds = 60;
+        }
+    }
+
+    /**
+     * MULTI/EXEC and WATCH. Prefix: proxy.transactions.*
+     *
+     * @param crossSlot what EXEC does when the transaction's keys span hash slots, which a cluster
+     *        can't run atomically: {@code reject} (default) answers CROSSSLOT, as a cluster node does;
+     *        {@code pipeline} runs the commands in order without atomicity. With WATCH, a cross-slot
+     *        transaction is always rejected.
+     * @param watchPool dedicated backend clients for connections that use WATCH, held from WATCH
+     *        until EXEC, DISCARD, UNWATCH or disconnect (watch state belongs to a connection)
+     */
+    public record Transactions(CrossSlot crossSlot, WatchPool watchPool) {
+        public Transactions {
+            if (crossSlot == null) crossSlot = CrossSlot.REJECT;
+            if (watchPool == null) watchPool = new WatchPool(0, 0, 0);
+        }
+    }
+
+    public enum CrossSlot { REJECT, PIPELINE }
+
+    /**
+     * @param maxSize            connections that can have keys watched at once; more wait (default 64)
+     * @param idleTimeoutSeconds close a pooled client after this long unused (default 60)
+     * @param acquireTimeoutMs   how long WATCH waits for a free client before failing (default 2000)
+     */
+    public record WatchPool(int maxSize, long idleTimeoutSeconds, long acquireTimeoutMs) {
+        public WatchPool {
+            if (maxSize <= 0) maxSize = 64;
+            if (idleTimeoutSeconds <= 0) idleTimeoutSeconds = 60;
+            if (acquireTimeoutMs <= 0) acquireTimeoutMs = 2000;
         }
     }
 }

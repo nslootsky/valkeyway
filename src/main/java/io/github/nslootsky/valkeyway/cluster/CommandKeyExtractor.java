@@ -35,7 +35,17 @@ public class CommandKeyExtractor {
     private static final Logger log = LoggerFactory.getLogger(CommandKeyExtractor.class);
     private static final long TIMEOUT_SECONDS = 5;
 
-    record KeySpec(int first, int last, int step, boolean movable, Map<String, KeySpec> subcommands) {}
+    /** @param arity the command's arity from COMMAND: n = exactly n arguments (name included), -n = at least n; 0 = unknown */
+    record KeySpec(int arity, int first, int last, int step, boolean movable, boolean noMulti,
+                   Map<String, KeySpec> subcommands) {
+        KeySpec(int arity, int first, int last, int step, boolean movable, Map<String, KeySpec> subcommands) {
+            this(arity, first, last, step, movable, false, subcommands);
+        }
+
+        KeySpec(int first, int last, int step, boolean movable, Map<String, KeySpec> subcommands) {
+            this(0, first, last, step, movable, false, subcommands);
+        }
+    }
 
     private volatile Map<String, KeySpec> table;
 
@@ -115,6 +125,64 @@ public class CommandKeyExtractor {
         return spec.movable() ? MovableKeys.parse(name, args) : keysFromSpec(spec, args);
     }
 
+    /**
+     * The error a Valkey server sends when {@code args} is queued in a transaction but can't run:
+     * an unknown command or subcommand, or the wrong number of arguments. {@code null} if it can be
+     * queued, or if the command table isn't loaded. [upstream:V6]
+     */
+    public String queueError(GlideClusterClient client, byte[][] args) {
+        Map<String, KeySpec> specs = loadTable(client);
+        if (specs == null) {
+            return null;
+        }
+        String name = lower(args[0]);
+        KeySpec spec = specs.get(name);
+        if (spec == null) {
+            return unknownCommand(args);
+        }
+        String fullName = name;
+        if (!spec.subcommands().isEmpty() && args.length >= 2) {
+            String subName = name + "|" + lower(args[1]);
+            KeySpec sub = spec.subcommands().get(subName);
+            if (sub == null) {
+                return "ERR unknown subcommand '" + truncate(text(args[1]), 128) + "'. Try "
+                        + text(args[0]).toUpperCase(Locale.ROOT) + " HELP.";
+            }
+            spec = sub;
+            fullName = subName;
+        }
+        if (spec.noMulti()) {
+            return notAllowedInTransaction(fullName);
+        }
+        int arity = spec.arity();
+        if ((arity > 0 && args.length != arity) || (arity < 0 && args.length < -arity)) {
+            return "ERR wrong number of arguments for '" + fullName + "' command";
+        }
+        return null;
+    }
+
+    /** For commands flagged no_multi (MULTI, WATCH, SUBSCRIBE, ...), as Valkey 9 words it. [upstream:V6] */
+    public static String notAllowedInTransaction(String fullName) {
+        return "ERR Command '" + fullName + "' not allowed inside a transaction";
+    }
+
+    /** Valkey's processCommand: quotes arguments until the list reaches 128 characters. */
+    static String unknownCommand(byte[][] args) {
+        StringBuilder list = new StringBuilder();
+        for (int i = 1; i < args.length && list.length() < 128; i++) {
+            list.append('\'').append(truncate(text(args[i]), 128 - list.length())).append("' ");
+        }
+        return "ERR unknown command '" + truncate(text(args[0]), 128) + "', with args beginning with: " + list;
+    }
+
+    private static String text(byte[] bytes) {
+        return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
+    private static String truncate(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max);
+    }
+
     static List<byte[]> keysFromSpec(KeySpec spec, byte[][] args) {
         if (spec.first() <= 0) {
             return List.of();
@@ -164,6 +232,7 @@ public class CommandKeyExtractor {
 
     private static KeySpec parseSpec(List<Object> info) {
         boolean movable = asList(info.get(2)).stream().anyMatch(f -> "movablekeys".equalsIgnoreCase(str(f)));
+        boolean noMulti = asList(info.get(2)).stream().anyMatch(f -> "no_multi".equalsIgnoreCase(str(f)));
         Map<String, KeySpec> subcommands = new HashMap<>();
         if (info.size() >= 10) {
             for (Object sub : asList(info.get(9))) {
@@ -173,7 +242,8 @@ public class CommandKeyExtractor {
                 }
             }
         }
-        return new KeySpec(num(info.get(3)), num(info.get(4)), num(info.get(5)), movable, subcommands);
+        return new KeySpec(num(info.get(1)), num(info.get(3)), num(info.get(4)), num(info.get(5)), movable, noMulti,
+                subcommands);
     }
 
     private List<byte[]> getKeysFromServer(GlideClusterClient client, byte[][] args) {

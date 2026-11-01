@@ -28,6 +28,11 @@ import java.util.List;
  */
 public class ScanCommand implements CommandHandler {
 
+    @Override
+    public InTransaction inTransaction() {
+        return InTransaction.REJECT;
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ScanCommand.class);
     public static final int SCAN_MAX_RESULTS = 5000;
 

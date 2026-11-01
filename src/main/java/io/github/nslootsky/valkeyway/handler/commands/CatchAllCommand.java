@@ -52,6 +52,11 @@ import java.util.concurrent.Executors;
  */
 public class CatchAllCommand implements AsyncCommandHandler {
 
+    @Override
+    public InTransaction inTransaction() {
+        return InTransaction.RUN;
+    }
+
     private static final Logger log = LoggerFactory.getLogger(CatchAllCommand.class);
 
     private final GlideClientCache glideClientCache;
@@ -173,7 +178,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
 
     /**
      * Async unless the command needs connection state handled on the barrier path (MULTI queueing,
-     * CLIENT, WATCH/UNWATCH), may block (BLPOP & co. use a leased client), or would block the network
+     * CLIENT), may block (BLPOP & co. use a leased client), or would block the network
      * thread to set something up (the database's first Glide client, the COMMAND table).
      */
     @Override
@@ -256,12 +261,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
     }
 
     private static boolean isBarrierCommand(byte[] name) {
-        return switch (name.length) {
-            case 5 -> equalsIgnoreCase(name, "WATCH");
-            case 6 -> equalsIgnoreCase(name, "CLIENT");
-            case 7 -> equalsIgnoreCase(name, "UNWATCH");
-            default -> false;
-        };
+        return name.length == 6 && equalsIgnoreCase(name, "CLIENT");
     }
 
     private static boolean equalsIgnoreCase(byte[] name, String expected) {
@@ -303,8 +303,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
         try {
             metrics.recordCommand(command);
             if (connection.inTransaction()) {
-                queueTransactionCommand(connection, args);
-                return Reply.QUEUED;
+                return queueTransactionCommand(connection, args);
             }
 
             if (command.equalsIgnoreCase("CLIENT")) {
@@ -356,16 +355,27 @@ public class CatchAllCommand implements AsyncCommandHandler {
         return handleCustomCommand(request.connection(), request.args());
     }
 
-    private void queueTransactionCommand(Connection connection, byte[][] args) {
-        if (connection.transactionError() != null) {
-            return;
-        }
+    /**
+     * Queues a command inside MULTI. Like Valkey, a command that can't run (unknown, wrong number of
+     * arguments) is answered with its error now, and makes EXEC fail with EXECABORT.
+     */
+    private Reply queueTransactionCommand(Connection connection, byte[][] args) {
         GlideClusterClient client = glideClientCache.getClient(connection.db());
-        for (byte[] key : keyExtractor.extractKeys(client, args)) {
-            connection.transactionSlots().add(ClusterSlots.slot(key));
+        String error = keyExtractor.queueError(client, args);
+        if (error != null) {
+            connection.transactionError(EXECABORT);
+            return Reply.error(error);
         }
-        connection.transactionCommands().add(args);
+        if (connection.transactionError() == null) {
+            for (byte[] key : keyExtractor.extractKeys(client, args)) {
+                connection.transactionSlots().add(ClusterSlots.slot(key));
+            }
+            connection.transactionCommands().add(args);
+        }
+        return Reply.QUEUED;
     }
+
+    public static final String EXECABORT = "EXECABORT Transaction discarded because of previous errors.";
 
     private Reply handleCustomCommand(Connection connection, byte[][] args) {
         try {

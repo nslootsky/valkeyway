@@ -16,9 +16,23 @@ import io.github.nslootsky.valkeyway.server.Request;
 public class SelectCommand implements CommandHandler {
 
     @Override
+    public InTransaction inTransaction() {
+        return InTransaction.RUN;
+    }
+
+    private final io.github.nslootsky.valkeyway.transaction.WatchSessions watches;
+
+    public SelectCommand(io.github.nslootsky.valkeyway.transaction.WatchSessions watches) {
+        this.watches = watches;
+    }
+
+    @Override
     public Reply execute(Request request) {
         if (request.connection().inTransaction()) {
-            return Reply.error("ERR SELECT not allowed in MULTI/EXEC");
+            // Running SELECT inside EXEC would switch the database of the backend connection that every
+            // client shares. Discard the transaction rather than run its commands in the wrong database.
+            request.connection().transactionError(CatchAllCommand.EXECABORT);
+            return Reply.error("ERR Command 'select' is not supported inside a transaction by this proxy");
         }
         if (request.argCount() != 1) {
             return Reply.error("ERR wrong number of arguments for 'select' command");
@@ -29,6 +43,7 @@ public class SelectCommand implements CommandHandler {
                 return Reply.error("ERR DB index is out of range");
             }
             request.connection().db(db);
+            watches.selected(request.connection());
             return Reply.OK;
         } catch (NumberFormatException e) {
             return Reply.error("ERR value is not an integer or out of range");

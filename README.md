@@ -40,7 +40,7 @@ valkey-cli GET mykey
   More than 70 commands are checked byte for byte against a direct connection to a node.
 - Cross-slot commands such as DEL, MGET and UNLINK are split per slot and aggregated.
 - Multiple databases: SELECT with per-connection state (Valkey 9+ cluster mode).
-- Transactions: MULTI/EXEC, atomic within a slot.
+- Transactions: MULTI/EXEC and WATCH, atomic when all keys share a slot (use hash tags such as `{user1}`). Queue-time errors and EXECABORT behave as in Valkey, and WATCH is private to each client connection.
 - Cluster-wide SCAN, with cursors that work across connections.
 - Pipelining and inline commands.
 - Standalone-style HELLO and INFO; `CLUSTER INFO` and `CLUSTER NODES` answer like a server without cluster support.
@@ -117,6 +117,12 @@ proxy:
     coalesce-requests: true         # Send concurrent clients' commands to Glide in shared batches
     refresh-topology-from-seeds: true  # Check topology via the seeds, re-resolving DNS names (follows a re-pointed endpoint)
     topology-check-seconds: 0       # How often Glide checks for topology changes; 0 = Glide's default (60)
+  transactions:
+    cross-slot: reject          # EXEC whose keys span slots: reject (CROSSSLOT, like a cluster node) or pipeline (run without atomicity)
+    watch-pool:                 # Dedicated backend clients for connections that use WATCH
+      max-size: 64              # Connections with keys watched at once; more wait
+      idle-timeout-seconds: 60  # Close a pooled client after this long unused
+      acquire-timeout-ms: 2000  # How long WATCH waits for a free client before failing
   clients:
     max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
     timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)
@@ -223,6 +229,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
   - `proxy.errors` — total command errors
   - `proxy.blocking.pool.in_use` / `proxy.blocking.pool.clients` — blocking commands running / pooled clients open
   - `proxy.blocking.pool.exhausted_waits` — blocking commands that had to wait because the pool was full
+  - `proxy.watch.pool.in_use` / `proxy.watch.pool.clients` / `proxy.watch.pool.exhausted_waits` — the same for connections using WATCH
   - `proxy.commands.latency` — command execution latency histogram
 
 - **Prometheus**: `GET http://localhost:6380/actuator/prometheus`
@@ -234,7 +241,8 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 - SCAN (cluster-wide iteration with cursor persistence)
 - SELECT (per-session DB state)
-- MULTI/EXEC/DISCARD (transaction support)
+- MULTI/EXEC/DISCARD (transactions, queued by the proxy; atomic within a slot)
+- WATCH/UNWATCH (on a dedicated backend client per connection)
 - INFO (proxy-specific response with role:master)
 - HELLO (standalone-mode response)
 - CLUSTER (standalone errors for INFO/NODES; others proxied)
@@ -271,7 +279,9 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - RESP2 only (HELLO 3 is answered with protocol 2).
 - No TLS and no AUTH, neither for clients nor to the cluster.
 - Pub/Sub (SUBSCRIBE, PSUBSCRIBE, ...) is not supported.
-- Transactions spanning slots are atomic per slot, not as a whole.
+- A transaction is atomic only when all its keys share a slot. A cross-slot transaction is rejected with CROSSSLOT by default; with `proxy.transactions.cross-slot=pipeline`, its commands run in order without any atomicity. With WATCH, a cross-slot transaction is always rejected.
+- Inside MULTI, INFO, HELLO, SCAN, CLUSTER, PROXY and SELECT are rejected and the transaction is discarded. The proxy answers the first five itself, which EXEC on a node can't reproduce, and SELECT would switch the database of the shared backend connection.
+- SELECT between WATCH and EXEC makes EXEC abort, as if a watched key had changed (clients retry).
 - EVAL/EVALSHA with keys on several nodes fails with CROSSSLOT.
 - During a slot migration, a pipelined command that gets redirected can run after later commands of the same pipeline. Cluster-aware clients (Lettuce, Jedis) behave the same way.
 - A primary that hangs without closing its connections isn't routed around until it answers again (see [Cluster changes](#cluster-changes)).

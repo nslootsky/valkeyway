@@ -63,11 +63,39 @@ class CommandKeyExtractorTest {
 
         Map<String, KeySpec> specs = CommandKeyExtractor.parseTable(table);
 
-        assertEquals(new KeySpec(1, -1, 2, false, Map.of()), specs.get("mset"));
+        assertEquals(new KeySpec(-3, 1, -1, 2, false, Map.of()), specs.get("mset"));
         assertTrue(specs.get("eval").movable());
         KeySpec encoding = specs.get("object").subcommands().get("object|encoding");
         assertNotNull(encoding);
+        assertEquals(3, encoding.arity());
         assertEquals(List.of("foo"), keys(encoding, "OBJECT", "ENCODING", "foo"));
+    }
+
+    // --- queueError: what MULTI rejects at queue time (formats checked against Valkey in TransactionFidelityTest) ---
+
+    private static final Map<String, KeySpec> ARITY_TABLE = Map.of(
+            "get", new KeySpec(2, 1, 1, 1, false, Map.of()),
+            "mset", new KeySpec(-3, 1, -1, 2, false, Map.of()),
+            "config", new KeySpec(-2, 0, 0, 0, false, Map.of("config|get", new KeySpec(-3, 0, 0, 0, false, Map.of()))),
+            "subscribe", new KeySpec(-2, 0, 0, 0, false, true, Map.of()));
+
+    private static String queueError(String... parts) {
+        return new CommandKeyExtractor(ARITY_TABLE).queueError(null, args(parts));
+    }
+
+    @Test
+    void queueErrorsMatchValkey() {
+        assertNull(queueError("GET", "k"));
+        assertNull(queueError("MSET", "a", "1", "b", "2"));
+        assertNull(queueError("config", "get", "maxmemory"));
+        assertEquals("ERR wrong number of arguments for 'get' command", queueError("GET"));
+        assertEquals("ERR wrong number of arguments for 'mset' command", queueError("MSET", "a"));
+        assertEquals("ERR wrong number of arguments for 'config' command", queueError("CONFIG"));
+        assertEquals("ERR wrong number of arguments for 'config|get' command", queueError("CONFIG", "GET"));
+        assertEquals("ERR unknown subcommand 'nope'. Try CONFIG HELP.", queueError("config", "nope"));
+        assertEquals("ERR unknown command 'nosuch', with args beginning with: 'a' 'b c' ", queueError("nosuch", "a", "b c"));
+        assertEquals("ERR unknown command 'nosuch', with args beginning with: ", queueError("nosuch"));
+        assertEquals("ERR Command 'subscribe' not allowed inside a transaction", queueError("SUBSCRIBE", "ch"));
     }
 
     // --- singleSlot: what the proxy routes explicitly ---

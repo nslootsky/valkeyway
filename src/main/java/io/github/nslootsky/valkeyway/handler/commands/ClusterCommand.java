@@ -22,6 +22,11 @@ import java.util.Set;
  */
 public class ClusterCommand implements CommandHandler {
 
+    @Override
+    public InTransaction inTransaction() {
+        return InTransaction.REJECT;
+    }
+
     /** Subcommands that must return standalone-mode errors (real standalone servers don't support cluster mode). */
     private static final Set<String> STANDALONE_ERROR_SUBCOMMANDS = Set.of("INFO", "NODES");
 
