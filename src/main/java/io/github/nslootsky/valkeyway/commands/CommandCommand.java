@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import java.util.Collection;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
@@ -70,7 +71,7 @@ public class CommandCommand implements CommandHandler {
                 }
                 yield new Reply.Array(items);
             }
-            case java.util.Collection<?> list -> toReplyForDocs(list.toArray());
+            case Collection<?> list -> toReplyForDocs(list.toArray());
             case Map<?, ?> map -> {
                 List<Reply> items = new ArrayList<>(map.size() * 2);
                 for (Map.Entry<?, ?> entry : map.entrySet()) {

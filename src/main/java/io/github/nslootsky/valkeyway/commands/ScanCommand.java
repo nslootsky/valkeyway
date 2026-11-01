@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import java.util.Arrays;
 import glide.api.GlideClusterClient;
 import glide.api.models.GlideString;
 import glide.api.models.commands.scan.ClusterScanCursor;
@@ -143,7 +144,7 @@ public class ScanCommand implements CommandHandler {
                 cursor.releaseCursorHandle();
                 cursor = (ClusterScanCursor) result[0];
                 if (result[1] != null) {
-                    keys.addAll(java.util.Arrays.asList((Object[]) result[1]));
+                    keys.addAll(Arrays.asList((Object[]) result[1]));
                 }
             }
             String next;

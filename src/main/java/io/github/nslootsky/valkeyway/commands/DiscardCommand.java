@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 import io.github.nslootsky.valkeyway.transaction.Transaction;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
@@ -20,9 +21,9 @@ public class DiscardCommand implements CommandHandler {
         return InTransaction.RUN;
     }
 
-    private final io.github.nslootsky.valkeyway.transaction.WatchSessions watches;
+    private final WatchSessions watches;
 
-    public DiscardCommand(io.github.nslootsky.valkeyway.transaction.WatchSessions watches) {
+    public DiscardCommand(WatchSessions watches) {
         this.watches = watches;
     }
 

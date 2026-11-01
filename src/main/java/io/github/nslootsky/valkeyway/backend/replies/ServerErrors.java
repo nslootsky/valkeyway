@@ -5,6 +5,11 @@
 
 package io.github.nslootsky.valkeyway.backend.replies;
 
+import java.util.Set;
+import java.util.concurrent.CompletionException;
+import glide.api.models.exceptions.ClosingException;
+import glide.api.models.exceptions.TimeoutException;
+import glide.api.models.exceptions.RequestException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 
 import java.util.Map;
@@ -63,8 +68,8 @@ public final class ServerErrors {
      * batch Glide returns them, except MOVED/ASK when the redirect target is reachable.
      */
     // [upstream:G3]
-    private static final java.util.Set<String> REJECTED_UNRUN =
-            java.util.Set.of("TRYAGAIN", "CLUSTERDOWN", "MASTERDOWN", "LOADING", "READONLY", "MOVED", "ASK");
+    private static final Set<String> REJECTED_UNRUN =
+            Set.of("TRYAGAIN", "CLUSTERDOWN", "MASTERDOWN", "LOADING", "READONLY", "MOVED", "ASK");
 
     /**
      * Whether {@code error} means the node rejected the command without running it, for a transient
@@ -83,14 +88,14 @@ public final class ServerErrors {
     /** An error reply for {@code e}, unwrapping {@link ExecutionException}. */
     public static Reply error(Throwable e) {
         Throwable cause = e;
-        while ((cause instanceof ExecutionException || cause instanceof java.util.concurrent.CompletionException)
+        while ((cause instanceof ExecutionException || cause instanceof CompletionException)
                 && cause.getCause() != null) {
             cause = cause.getCause();
         }
         // [upstream:G2] Glide's few typed failures; everything else is text.
         return switch (cause) {
-            case glide.api.models.exceptions.TimeoutException t -> new Reply.Error(TIMED_OUT);
-            case glide.api.models.exceptions.ClosingException c ->
+            case TimeoutException _ -> new Reply.Error(TIMED_OUT);
+            case ClosingException _ ->
                     new Reply.Error(BACKEND_UNAVAILABLE + "the backend client is closed" + MAY_HAVE_RUN);
             default -> new Reply.Error(message(cause.getMessage()));
         };
@@ -102,7 +107,7 @@ public final class ServerErrors {
      */
     public static boolean isUnfollowedRedirect(Throwable e) {
         Throwable cause = e;
-        while ((cause instanceof ExecutionException || cause instanceof java.util.concurrent.CompletionException)
+        while ((cause instanceof ExecutionException || cause instanceof CompletionException)
                 && cause.getCause() != null) {
             cause = cause.getCause();
         }
@@ -116,7 +121,7 @@ public final class ServerErrors {
     public static String message(String msg) {
         String server = serverFormat(msg);
         String rewritten = backendFailure(server);
-        if (rewritten != server && log.isDebugEnabled()) {
+        if (log.isDebugEnabled() && !rewritten.equals(server)) {
             log.debug("Backend failure \"{}\" sent to the client as \"{}\"", msg, rewritten);
         }
         return rewritten;

@@ -88,7 +88,7 @@ public class LeasePool<K, T extends AutoCloseable> implements AutoCloseable {
             if (discard || closed) {
                 destroy(resource);
             } else {
-                idle.computeIfAbsent(key, k -> new ConcurrentLinkedDeque<>())
+                idle.computeIfAbsent(key, _ -> new ConcurrentLinkedDeque<>())
                         .push(new Idle<>(resource, clock.getAsLong()));
             }
             permits.release();
@@ -140,8 +140,9 @@ public class LeasePool<K, T extends AutoCloseable> implements AutoCloseable {
             return reused.resource();
         }
         // We hold a permit, so leases < maxSize; make room by closing an idle resource of another key.
-        while (live.get() >= maxSize && closeOneIdle()) {
-            // keep going until under the cap or nothing idle remains
+        boolean closedOne = true;
+        while (live.get() >= maxSize && closedOne) {
+            closedOne = closeOneIdle();
         }
         T created = factory.apply(key);
         live.incrementAndGet();
@@ -182,9 +183,6 @@ public class LeasePool<K, T extends AutoCloseable> implements AutoCloseable {
         }
     }
 
-    public int maxSize() {
-        return maxSize;
-    }
 
     public int inUse() {
         return maxSize - permits.availablePermits();

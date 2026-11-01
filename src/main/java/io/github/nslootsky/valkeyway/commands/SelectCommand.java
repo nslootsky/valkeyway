@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.transaction.TransactionQueue;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
@@ -21,9 +22,9 @@ public class SelectCommand implements CommandHandler {
         return InTransaction.RUN;
     }
 
-    private final io.github.nslootsky.valkeyway.transaction.WatchSessions watches;
+    private final WatchSessions watches;
 
-    public SelectCommand(io.github.nslootsky.valkeyway.transaction.WatchSessions watches) {
+    public SelectCommand(WatchSessions watches) {
         this.watches = watches;
     }
 

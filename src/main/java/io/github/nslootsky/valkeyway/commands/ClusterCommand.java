@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import java.util.Locale;
 import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.protocol.Reply;
@@ -40,7 +41,7 @@ public class ClusterCommand implements CommandHandler {
         if (request.argCount() < 1) {
             return Reply.error("ERR wrong number of arguments for 'cluster' command");
         }
-        if (STANDALONE_ERROR_SUBCOMMANDS.contains(request.argString(0).toUpperCase(java.util.Locale.ROOT))) {
+        if (STANDALONE_ERROR_SUBCOMMANDS.contains(request.argString(0).toUpperCase(Locale.ROOT))) {
             return Reply.error("ERR This instance has cluster support disabled");
         }
         return backend.callAndWait(clients.getClient(request.connection().db()), request.args());

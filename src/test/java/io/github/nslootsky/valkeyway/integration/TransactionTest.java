@@ -5,6 +5,8 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
 import glide.api.models.Batch;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -52,7 +54,7 @@ class TransactionTest extends IntegrationTestBase {
             batch.set("{batch}key1", "batch_val1");
             batch.set("{batch}key2", "batch_val2");
             batch.get("{batch}key1");
-            Object[] result = client.getClient().exec(batch, true).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            Object[] result = client.getClient().exec(batch, true).get(5, TimeUnit.SECONDS);
             assertNotNull(result);
             assertEquals(3, result.length);
             assertEquals("OK", result[0]);
@@ -69,7 +71,7 @@ class TransactionTest extends IntegrationTestBase {
             pipeline.set("pipe_key1", "pipe_val1");
             pipeline.set("pipe_key2", "pipe_val2");
             pipeline.get("pipe_key1");
-            Object[] result = client.getClient().exec(pipeline, false).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            Object[] result = client.getClient().exec(pipeline, false).get(5, TimeUnit.SECONDS);
             assertNotNull(result);
             assertEquals(3, result.length);
             assertEquals("OK", result[0]);
@@ -86,8 +88,8 @@ class TransactionTest extends IntegrationTestBase {
             Batch batch = new Batch(true);
             batch.set("txa:one", "1");
             batch.set("txa:two", "2");
-            java.util.concurrent.ExecutionException e = assertThrows(java.util.concurrent.ExecutionException.class,
-                    () -> client.getClient().exec(batch, true).get(5, java.util.concurrent.TimeUnit.SECONDS));
+            ExecutionException e = assertThrows(ExecutionException.class,
+                    () -> client.getClient().exec(batch, true).get(5, TimeUnit.SECONDS));
             // Glide's client reports the proxy's CROSSSLOT error as "CrossSlot: ...".
             assertTrue(e.getCause().getMessage().toUpperCase().contains("CROSSSLOT"), e.getCause().getMessage());
             assertNull(client.get("txa:one"));
@@ -103,7 +105,7 @@ class TransactionTest extends IntegrationTestBase {
             batch.set("{txp}a", "1");
             batch.ping();
             batch.get("{txp}a");
-            Object[] result = client.getClient().exec(batch, true).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            Object[] result = client.getClient().exec(batch, true).get(5, TimeUnit.SECONDS);
             assertArrayEquals(new Object[]{"OK", "PONG", "1"}, result);
         }
     }

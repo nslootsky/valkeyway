@@ -117,7 +117,7 @@ public final class Backend {
             Object result = results == null || results.length == 0 ? null : results[0];
             // ofSingleValue, not of(): of() misreads map replies as multi-node results [upstream:G5].
             return result instanceof Throwable failure
-                    ? CompletableFuture.<ClusterValue<Object>>failedFuture(failure)
+                    ? CompletableFuture.failedFuture(failure)
                     : CompletableFuture.completedFuture(ClusterValue.ofSingleValue(result));
         });
     }

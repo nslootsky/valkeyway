@@ -91,17 +91,13 @@ public final class GlideReplies {
     }
 
     private static Reply simpleOrText(String s) {
-        if (s.equals("OK")) {
-            return Reply.OK;
-        }
-        if (s.equals("PONG")) {
-            return Reply.PONG;
-        }
-        if (s.equals("QUEUED")) {
-            return Reply.QUEUED;
-        }
-        return s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0
-                ? new Reply.Bulk(s.getBytes(StandardCharsets.UTF_8))
-                : new Reply.Simple(s);
+        return switch (s) {
+            case "OK" -> Reply.OK;
+            case "PONG" -> Reply.PONG;
+            case "QUEUED" -> Reply.QUEUED;
+            default -> s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0
+                    ? new Reply.Bulk(s.getBytes(StandardCharsets.UTF_8))
+                    : new Reply.Simple(s);
+        };
     }
 }

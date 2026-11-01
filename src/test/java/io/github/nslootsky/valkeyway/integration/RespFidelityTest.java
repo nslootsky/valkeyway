@@ -5,6 +5,8 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.Arrays;
+import java.util.ArrayList;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Error;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Status;
 import org.junit.jupiter.api.Test;
@@ -89,7 +91,7 @@ class RespFidelityTest extends IntegrationTestBase {
 
             // A cluster can't run it atomically; by default it's rejected, as a cluster node does.
             assertError("CROSSSLOT ", c.call("EXEC"));
-            assertEquals(java.util.Arrays.asList(null, null, null), c.call("MGET", "fid:k1", "fid:k2", "fid:k3"));
+            assertEquals(Arrays.asList(null, null, null), c.call("MGET", "fid:k1", "fid:k2", "fid:k3"));
         }
     }
 
@@ -158,7 +160,7 @@ class RespFidelityTest extends IntegrationTestBase {
     void commandDocsFlagsAreStatuses() throws Exception {
         try (RawRespClient c = connect()) {
             Object docs = c.call("COMMAND", "DOCS", "SET");
-            List<Object> flags = new java.util.ArrayList<>();
+            List<Object> flags = new ArrayList<>();
             collectFlagValues(docs, flags);
             assertFalse(flags.isEmpty(), "SET's arguments have flags: " + docs);
             assertTrue(flags.stream().allMatch(f -> f instanceof Status), "flags must be statuses: " + flags);

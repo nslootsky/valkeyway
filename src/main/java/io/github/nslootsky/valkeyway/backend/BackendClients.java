@@ -82,7 +82,7 @@ public class BackendClients {
 
     /** Get or create the shared client for the given database index. */
     public GlideClusterClient getClient(int db) {
-        return clients.computeIfAbsent(db, key -> {
+        return clients.computeIfAbsent(db, _ -> {
             GlideClusterClient client = createClient(db);
             log.info("Created GlideClusterClient for db={}", db);
             return client;
@@ -162,10 +162,6 @@ public class BackendClients {
             }
         }
         return nodes;
-    }
-
-    public int getActiveClients() {
-        return clients.size();
     }
 
     @PreDestroy

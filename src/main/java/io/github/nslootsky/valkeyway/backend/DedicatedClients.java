@@ -6,7 +6,6 @@
 package io.github.nslootsky.valkeyway.backend;
 
 import glide.api.GlideClusterClient;
-import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;

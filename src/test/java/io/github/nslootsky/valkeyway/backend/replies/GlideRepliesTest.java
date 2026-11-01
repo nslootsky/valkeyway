@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.backend.replies;
 
+import java.math.BigInteger;
 import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.protocol.ReplyEncoder;
@@ -65,7 +66,7 @@ class GlideRepliesTest {
         assertEquals(":5000000001\r\n", wire(5_000_000_001L));
         assertEquals("$3\r\n1.5\r\n", wire(1.5d));
         assertEquals(":1\r\n", wire(true));
-        assertEquals("$20\r\n12345678901234567890\r\n", wire(new java.math.BigInteger("12345678901234567890")));
+        assertEquals("$20\r\n12345678901234567890\r\n", wire(new BigInteger("12345678901234567890")));
     }
 
     @Test

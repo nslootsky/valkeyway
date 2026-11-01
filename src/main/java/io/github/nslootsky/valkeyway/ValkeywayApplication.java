@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway;
 
+import io.github.nslootsky.valkeyway.transaction.WatchClientPool;
 import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.commands.ValkeywayCommands;
@@ -40,7 +41,7 @@ public class ValkeywayApplication {
     @Bean(destroyMethod = "close")
     RespServer respServer(ValkeywayProperties props, BackendClients backendClients, ScanCursorStore scanCursorStore,
                           MetricsCollector metrics, BlockingClientPool blockingPool,
-                          io.github.nslootsky.valkeyway.transaction.WatchClientPool watchPool) throws InterruptedException {
+                          WatchClientPool watchPool) throws InterruptedException {
         ValkeywayProperties.Clients clients = props.clients();
         RespServer server = new RespServer(
                 new RespServer.Settings(props.host(), props.port(), clients.ioThreads(), clients.maxClients(),

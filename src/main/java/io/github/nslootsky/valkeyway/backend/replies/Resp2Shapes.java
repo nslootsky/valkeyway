@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.backend.replies;
 
+import java.util.Set;
 import io.github.nslootsky.valkeyway.protocol.DoubleFormat;
 import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.protocol.Reply;
@@ -60,10 +61,9 @@ public final class Resp2Shapes {
             case "xclaim" -> hasOption(args, "JUSTID") ? value : entries(value);
             case "xread", "xreadgroup" -> streams(value);
             case "xautoclaim" -> hasOption(args, "JUSTID") ? value : autoclaim(value);
-            case "zrandmember" -> hasOption(args, "WITHSCORES") ? flattenPairs(value) : value;
-            case "hrandfield" -> hasOption(args, "WITHVALUES") ? flattenPairs(value) : value;
-            case "zrangebyscore", "zrevrangebyscore", "zrevrange" ->
+            case "zrandmember", "zrangebyscore", "zrevrangebyscore", "zrevrange" ->
                     hasOption(args, "WITHSCORES") ? flattenPairs(value) : value;
+            case "hrandfield" -> hasOption(args, "WITHVALUES") ? flattenPairs(value) : value;
             case "zmpop", "bzmpop" -> keyAndScoredMembers(value);
             case "geodist" -> distance(value);
             case "geopos" -> positions(value);
@@ -81,7 +81,7 @@ public final class Resp2Shapes {
      * returns those as GlideString, indistinguishable from a bulk string, so they're listed here.
      */
     // [upstream:G7]
-    private static final java.util.Set<String> STATUS_COMMANDS = java.util.Set.of(
+    private static final Set<String> STATUS_COMMANDS = Set.of(
             "type", "bgsave", "bgrewriteaof", "migrate");
 
     /** PING without an argument answers +PONG (with one, it echoes a bulk string). Reaches Glide only inside EXEC. */
@@ -106,7 +106,7 @@ public final class Resp2Shapes {
 
     /** Commands whose "nothing" reply is a null array ({@code *-1}) in RESP2, not a null bulk string. */
     // [upstream:V2]
-    private static final java.util.Set<String> NULL_ARRAY_COMMANDS = java.util.Set.of(
+    private static final Set<String> NULL_ARRAY_COMMANDS = Set.of(
             // blocking timeouts (blocked.c replyToBlockedClientTimedOut: list, zset and stream types)
             "blpop", "brpop", "blmove", "brpoplpush", "blmpop", "bzpopmin", "bzpopmax", "bzmpop",
             // no data
@@ -189,18 +189,19 @@ public final class Resp2Shapes {
         if (pairs == null) {
             return value;
         }
+        Object[][] arrays = new Object[pairs.length][];
         int size = 0;
-        for (Object pair : pairs) {
-            Object[] p = toArray(pair);
-            if (p == null) {
+        for (int p = 0; p < pairs.length; p++) {
+            arrays[p] = toArray(pairs[p]);
+            if (arrays[p] == null) {
                 return value;
             }
-            size += p.length;
+            size += arrays[p].length;
         }
         Object[] out = new Object[size];
         int i = 0;
-        for (Object pair : pairs) {
-            for (Object element : toArray(pair)) {
+        for (Object[] pair : arrays) {
+            for (Object element : pair) {
                 out[i++] = element;
             }
         }
@@ -274,10 +275,10 @@ public final class Resp2Shapes {
         Object[] out = new Object[results.length];
         for (int r = 0; r < results.length; r++) {
             Object[] item = toArray(results[r]);
-            if (item == null || item.length != 2 || toArray(item[1]) == null) {
+            Object[] extras = item != null && item.length == 2 ? toArray(item[1]) : null;
+            if (extras == null) {
                 return value;
             }
-            Object[] extras = toArray(item[1]);
             Object[] flat = new Object[1 + extras.length];
             flat[0] = item[0];
             int i = 0;

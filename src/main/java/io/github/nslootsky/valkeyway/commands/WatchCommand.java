@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import io.github.nslootsky.valkeyway.transaction.WatchClientPool;
 import io.github.nslootsky.valkeyway.transaction.Transaction;
 import io.github.nslootsky.valkeyway.backend.GlideArgs;
 import io.github.nslootsky.valkeyway.protocol.Reply;
@@ -21,7 +22,7 @@ import java.util.Arrays;
 
 /**
  * WATCH and UNWATCH, on the connection's own backend client (see
- * {@link io.github.nslootsky.valkeyway.transaction.WatchClientPool}).
+ * {@link WatchClientPool}).
  */
 public class WatchCommand implements CommandHandler {
 

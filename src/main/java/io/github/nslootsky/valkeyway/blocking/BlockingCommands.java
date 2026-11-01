@@ -78,9 +78,9 @@ public final class BlockingCommands {
         int last = args.length - 1;
         return switch (name) {
             case "BLPOP", "BRPOP", "BZPOPMIN", "BZPOPMAX", "BRPOPLPUSH", "BLMOVE" ->
-                    Optional.of(seconds(args, last, TimeoutReply.NULL));
+                    Optional.of(seconds(args, last));
             case "BLMPOP", "BZMPOP" ->
-                    Optional.of(seconds(args, 1, TimeoutReply.NULL));
+                    Optional.of(seconds(args, 1));
             case "XREAD", "XREADGROUP" -> blockOption(args);
             case "WAIT" -> args.length > 2
                     ? Optional.of(millis(args, 2, TimeoutReply.ZERO))
@@ -106,7 +106,8 @@ public final class BlockingCommands {
         return Optional.empty();
     }
 
-    private static Spec seconds(byte[][] args, int index, TimeoutReply reply) {
+    /** A timeout in seconds; such commands (BLPOP & co.) answer a null array when it expires. */
+    private static Spec seconds(byte[][] args, int index) {
         long millis = 0;
         try {
             double seconds = Double.parseDouble(new String(args[index], StandardCharsets.US_ASCII));
@@ -116,7 +117,7 @@ public final class BlockingCommands {
         } catch (NumberFormatException e) {
             // leave as "forever"; the server will reject the argument
         }
-        return new Spec(index, TimeoutUnit.SECONDS, millis, reply);
+        return new Spec(index, TimeoutUnit.SECONDS, millis, TimeoutReply.NULL);
     }
 
     private static Spec millis(byte[][] args, int index, TimeoutReply reply) {

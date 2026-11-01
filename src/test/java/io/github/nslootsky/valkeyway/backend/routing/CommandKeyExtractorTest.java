@@ -5,6 +5,9 @@
 
 package io.github.nslootsky.valkeyway.backend.routing;
 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor.KeySpec;
 import org.junit.jupiter.api.Test;
 
@@ -182,8 +185,8 @@ class CommandKeyExtractorTest {
     /** After a cluster upgrade adds a command, the next unknown-command check reloads the table, at most once a minute. */
     @Test
     void anUnknownCommandReloadsTheTableAtMostOncePerInterval() {
-        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
-        java.util.concurrent.atomic.AtomicInteger loads = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicLong now = new AtomicLong(0);
+        AtomicInteger loads = new AtomicInteger();
         Map<String, KeySpec> old = Map.of("get", new KeySpec(2, 1, 1, 1, false, Map.of()));
         Map<String, KeySpec> upgraded = Map.of("get", new KeySpec(2, 1, 1, 1, false, Map.of()),
                 "newcmd", new KeySpec(-1, 0, 0, 0, false, Map.of()));
@@ -192,11 +195,11 @@ class CommandKeyExtractorTest {
 
         assertNull(extractor.queueError(null, args("GET", "k")));
         assertEquals(1, loads.get());
-        now.set(java.util.concurrent.TimeUnit.SECONDS.toNanos(5));
+        now.set(TimeUnit.SECONDS.toNanos(5));
         assertTrue(extractor.queueError(null, args("NEWCMD")).startsWith("ERR unknown command"),
                 "within the interval: no reload, still unknown");
         assertEquals(1, loads.get());
-        now.set(java.util.concurrent.TimeUnit.SECONDS.toNanos(61));
+        now.set(TimeUnit.SECONDS.toNanos(61));
         assertNull(extractor.queueError(null, args("NEWCMD")), "reloaded: now known");
         assertEquals(2, loads.get());
         assertTrue(extractor.queueError(null, args("NOSUCH")).startsWith("ERR unknown command"));

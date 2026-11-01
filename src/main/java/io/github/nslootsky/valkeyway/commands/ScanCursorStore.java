@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Scheduler;
@@ -44,7 +45,7 @@ public class ScanCursorStore {
                 .maximumSize(maxCursors)
                 .scheduler(Scheduler.systemScheduler())
                 .executor(Runnable::run) // release evicted cursors right away, on the evicting thread
-                .removalListener((String id, Entry entry, com.github.benmanes.caffeine.cache.RemovalCause cause) -> {
+                .removalListener((String id, Entry entry, RemovalCause cause) -> {
                     // Explicit removals are takes: the caller now owns the cursor.
                     if (entry != null && cause.wasEvicted()) {
                         entry.cursor().releaseCursorHandle();

@@ -5,6 +5,12 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
+import java.io.UncheckedIOException;
+import java.util.concurrent.CompletableFuture;
+import io.github.nslootsky.valkeyway.ValkeywayApplication;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Error;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Status;
 import org.junit.jupiter.api.MethodOrderer;
@@ -45,7 +51,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @Tag("integration")
 @SpringBootTest(
-        classes = io.github.nslootsky.valkeyway.ValkeywayApplication.class,
+        classes = ValkeywayApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"proxy.host=127.0.0.1", "proxy.port=" + TopologyChangeTest.PROXY_PORT}
 )
@@ -146,12 +152,12 @@ class TopologyChangeTest {
             });
             try {
                 // Started together, so all of them are in flight while the keys are split.
-                var piped = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                var piped = CompletableFuture.supplyAsync(() -> {
                     try {
                         // The first command of a pipeline is sent alone; the rest go as one batch.
                         return proxy.pipeline(List.of(cmd("GET", b), cmd("MGET", a, b), cmd("GET", b)));
                     } catch (IOException e) {
-                        throw new java.io.UncheckedIOException(e);
+                        throw new UncheckedIOException(e);
                     }
                 }, Executors.newVirtualThreadPerTaskExecutor());
                 AtomicLong sentDuringMigration = new AtomicLong();
@@ -497,10 +503,10 @@ class TopologyChangeTest {
         }
 
         /** Error counts by path and message (digits blanked so similar messages group). */
-        java.util.Map<String, Long> errorKinds() {
-            return errors.stream().collect(java.util.stream.Collectors.groupingBy(
+        Map<String, Long> errorKinds() {
+            return errors.stream().collect(Collectors.groupingBy(
                     e -> e.substring(e.indexOf(' ') + 1).replaceAll("\\d+", "N"),
-                    java.util.TreeMap::new, java.util.stream.Collectors.counting()));
+                    TreeMap::new, Collectors.counting()));
         }
 
         int errorCount() {

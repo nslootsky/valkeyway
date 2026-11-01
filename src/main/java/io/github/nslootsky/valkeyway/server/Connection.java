@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.server;
 
+import java.util.concurrent.CompletionException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -18,7 +19,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
@@ -319,7 +319,7 @@ public final class Connection {
     }
 
     private static Reply errorReply(Throwable e) {
-        Throwable cause = e instanceof java.util.concurrent.CompletionException && e.getCause() != null ? e.getCause() : e;
+        Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
         return Reply.error("ERR " + (cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage()));
     }
 

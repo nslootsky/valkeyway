@@ -6,7 +6,6 @@
 package io.github.nslootsky.valkeyway.backend;
 
 import glide.api.GlideClusterClient;
-import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
 import io.netty.channel.EventLoop;
@@ -58,7 +57,7 @@ public final class Coalescer {
 
         CompletionStage<Reply> add(int db, byte[][] args, EventLoop loop) {
             CompletableFuture<Reply> reply = new CompletableFuture<>();
-            byDb.computeIfAbsent(db, d -> new ArrayList<>()).add(new Pending(args, reply));
+            byDb.computeIfAbsent(db, _ -> new ArrayList<>()).add(new Pending(args, reply));
             if (!flushScheduled) {
                 flushScheduled = true;
                 loop.execute(() -> flush(loop));

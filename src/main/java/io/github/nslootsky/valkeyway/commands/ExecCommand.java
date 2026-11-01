@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import java.nio.charset.StandardCharsets;
 import io.github.nslootsky.valkeyway.transaction.Transaction;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterBatch;
@@ -100,7 +101,7 @@ public class ExecCommand implements CommandHandler {
             }
             // An empty EXEC still reports whether a watched key changed; run a harmless command on
             // the watched slot so the batch goes to the node holding the watches.
-            buffered = List.<byte[][]>of(new byte[][]{"EXISTS".getBytes(java.nio.charset.StandardCharsets.US_ASCII), watch.firstKey()});
+            buffered = List.<byte[][]>of(new byte[][]{"EXISTS".getBytes(StandardCharsets.US_ASCII), watch.firstKey()});
             Reply reply = run(connection, buffered, false, watch);
             return reply instanceof Reply.Array ? Reply.EMPTY_ARRAY : reply;
         }

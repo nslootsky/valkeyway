@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.Map;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ class HashTagsTest extends IntegrationTestBase {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             client.hset("hgetall_hash", "f1", "v1");
             client.hset("hgetall_hash", "f2", "v2");
-            java.util.Map<String, String> result = client.hgetall("hgetall_hash");
+            Map<String, String> result = client.hgetall("hgetall_hash");
             assertNotNull(result);
             assertEquals(2, result.size());
             assertEquals("v1", result.get("f1"));

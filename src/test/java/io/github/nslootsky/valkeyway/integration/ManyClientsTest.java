@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.concurrent.Future;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Error;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +38,7 @@ class ManyClientsTest extends IntegrationTestBase {
         CountDownLatch connected = new CountDownLatch(clients);
         CountDownLatch go = new CountDownLatch(1);
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<java.util.concurrent.Future<?>> tasks = new ArrayList<>();
+            List<Future<?>> tasks = new ArrayList<>();
             for (int i = 0; i < clients; i++) {
                 tasks.add(pool.submit(() -> {
                     try (RawRespClient c = new RawRespClient("127.0.0.1", RESP_PORT)) {
@@ -73,7 +74,7 @@ class ManyClientsTest extends IntegrationTestBase {
         int rounds = 50;
         ConcurrentLinkedQueue<String> wrong = new ConcurrentLinkedQueue<>();
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<java.util.concurrent.Future<?>> tasks = new ArrayList<>();
+            List<Future<?>> tasks = new ArrayList<>();
             for (int i = 0; i < clients; i++) {
                 int id = i;
                 tasks.add(pool.submit(() -> {

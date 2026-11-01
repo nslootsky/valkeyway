@@ -5,6 +5,9 @@
 
 package io.github.nslootsky.valkeyway.backend.routing;
 
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.function.LongSupplier;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
@@ -48,11 +51,11 @@ public class CommandKeyExtractor {
     }
 
     /** Reloads for a command missing from the table happen at most this often. */
-    static final long RELOAD_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
+    static final long RELOAD_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(60);
 
     private volatile Map<String, KeySpec> table;
-    private final java.util.function.Function<GlideClusterClient, Map<String, KeySpec>> loader;
-    private final java.util.function.LongSupplier clock;
+    private final Function<GlideClusterClient, Map<String, KeySpec>> loader;
+    private final LongSupplier clock;
     private long loadedAt;
 
     public CommandKeyExtractor() {
@@ -61,12 +64,12 @@ public class CommandKeyExtractor {
 
     /** For tests: use a fixed command table instead of loading it from the cluster. */
     CommandKeyExtractor(Map<String, KeySpec> table) {
-        this(client -> table, System::nanoTime);
+        this(_ -> table, System::nanoTime);
         this.table = table;
     }
 
-    CommandKeyExtractor(java.util.function.Function<GlideClusterClient, Map<String, KeySpec>> loader,
-                        java.util.function.LongSupplier clock) {
+    CommandKeyExtractor(Function<GlideClusterClient, Map<String, KeySpec>> loader,
+                        LongSupplier clock) {
         this.loader = loader;
         this.clock = clock;
     }
@@ -82,7 +85,7 @@ public class CommandKeyExtractor {
     }
 
     /** Loads the command table on a background thread, so map-reply commands can start async soon after startup. */
-    public void preloadInBackground(java.util.function.Supplier<GlideClusterClient> client) {
+    public void preloadInBackground(Supplier<GlideClusterClient> client) {
         Thread.ofVirtual().name("command-table-preload").start(() -> {
             try {
                 preload(client.get());
@@ -285,7 +288,7 @@ public class CommandKeyExtractor {
         for (Object entry : entries) {
             List<Object> info = asList(entry);
             if (info.size() >= 6) {
-                specs.put(str(info.get(0)).toLowerCase(Locale.ROOT), parseSpec(info));
+                specs.put(str(info.getFirst()).toLowerCase(Locale.ROOT), parseSpec(info));
             }
         }
         return specs;
@@ -299,7 +302,7 @@ public class CommandKeyExtractor {
             for (Object sub : asList(info.get(9))) {
                 List<Object> subInfo = asList(sub);
                 if (subInfo.size() >= 6) {
-                    subcommands.put(str(subInfo.get(0)).toLowerCase(Locale.ROOT), parseSpec(subInfo));
+                    subcommands.put(str(subInfo.getFirst()).toLowerCase(Locale.ROOT), parseSpec(subInfo));
                 }
             }
         }

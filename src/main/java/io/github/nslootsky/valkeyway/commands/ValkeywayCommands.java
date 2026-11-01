@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import java.util.Locale;
 import io.github.nslootsky.valkeyway.ValkeywayProperties;
 import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.backend.Coalescer;
@@ -45,7 +46,7 @@ public final class ValkeywayCommands {
                     // Answered from proxy state (INFO, HELLO, SCAN, CLUSTER, PROXY), which a node
                     // can't reproduce inside EXEC. Like any queue-time error, this discards the transaction.
                     return TransactionQueue.reject(request.connection(), "ERR Command '"
-                            + request.command().toLowerCase(java.util.Locale.ROOT)
+                            + request.command().toLowerCase(Locale.ROOT)
                             + "' is not supported inside a transaction by this proxy");
                 })
                 .register("ping", new PingCommand())
