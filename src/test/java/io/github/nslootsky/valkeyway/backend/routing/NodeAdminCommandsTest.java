@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.backend.routing;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -17,6 +18,16 @@ class NodeAdminCommandsTest {
 
     private static byte[][] args(String command) {
         return Arrays.stream(command.split(" ")).map(s -> s.getBytes(StandardCharsets.US_ASCII)).toArray(byte[][]::new);
+    }
+
+    @Test
+    void credentialReadsAreRefused() {
+        for (String command : new String[]{"ACL LIST", "acl getuser default"}) {
+            String error = new NodeAdminCommands(true).check(args(command));
+            assertNotNull(error, command);
+            assertTrue(error.contains("would show the cluster's credentials"), error);
+            assertNull(new NodeAdminCommands(false).check(args(command)), "forward mode lets it through");
+        }
     }
 
     @ParameterizedTest
@@ -34,7 +45,7 @@ class NodeAdminCommandsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"GET k", "SET k v", "CONFIG GET maxmemory", "CONFIG", "ACL WHOAMI", "ACL LIST",
+    @ValueSource(strings = {"GET k", "SET k v", "CONFIG GET maxmemory", "CONFIG", "ACL WHOAMI", "ACL USERS",
             "CLUSTER KEYSLOT k", "CLUSTER INFO", "SCAN 0", "SCRIPT FLUSH", "FLUSHALL", "PING", "DEBUGX", "S"})
     void allowed(String command) {
         assertNull(new NodeAdminCommands(true).check(args(command)), command);
