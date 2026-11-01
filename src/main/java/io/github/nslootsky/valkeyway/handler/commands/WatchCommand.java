@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
+import io.github.nslootsky.valkeyway.transaction.Transaction;
 import io.github.nslootsky.valkeyway.backend.GlideArgs;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.ServerErrors;
@@ -55,7 +56,7 @@ public class WatchCommand implements CommandHandler {
         }
         if (connection.inTransaction()) {
             // Queued like any other command; it runs inside EXEC on the same backend client.
-            connection.transactionCommands().add(args);
+            Transaction.current(connection).commands().add(args);
             return Reply.QUEUED;
         }
         sessions.end(connection);

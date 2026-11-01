@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
+import io.github.nslootsky.valkeyway.server.ConnectionKey;
 import glide.api.GlideClusterClient;
 import glide.api.models.commands.scan.ClusterScanCursor;
 import glide.api.models.commands.scan.ScanOptions;
@@ -39,6 +40,9 @@ public class ScanCommand implements CommandHandler {
     private final GlideClientCache glideClientCache;
     private final ScanCursorStore scanCursorStore;
 
+    /** The cursor this connection's current SCAN continues from. */
+    private static final ConnectionKey<String> CURSOR = ConnectionKey.of("scan.cursor");
+
     public ScanCommand(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore) {
         this.glideClientCache = glideClientCache;
         this.scanCursorStore = scanCursorStore;
@@ -71,10 +75,9 @@ public class ScanCommand implements CommandHandler {
         ClusterScanCursor scanCursor;
         if ("0".equals(cursorArg)) {
             scanCursor = ClusterScanCursor.initialCursor();
-            String currentCursorId = connection.scanCursorId();
+            String currentCursorId = connection.remove(CURSOR);
             if (currentCursorId != null) {
                 scanCursorStore.removeCursor(currentCursorId);
-                connection.scanCursorId(null);
             }
         } else {
             scanCursor = scanCursorStore.getCursor(cursorArg);
@@ -113,14 +116,13 @@ public class ScanCommand implements CommandHandler {
             if (currentCursor.isFinished()) {
                 nextCursorStr = "0";
                 currentCursor.releaseCursorHandle();
-                String cursorId = connection.scanCursorId();
+                String cursorId = connection.remove(CURSOR);
                 if (cursorId != null) {
                     scanCursorStore.removeCursor(cursorId);
-                    connection.scanCursorId(null);
                 }
             } else {
                 nextCursorStr = scanCursorStore.createCursor(currentCursor);
-                connection.scanCursorId(nextCursorStr);
+                connection.set(CURSOR, nextCursorStr);
             }
 
             log.debug("SCAN OK keys={} finished={} cursor={}", allKeys.size(), currentCursor.isFinished(), nextCursorStr);

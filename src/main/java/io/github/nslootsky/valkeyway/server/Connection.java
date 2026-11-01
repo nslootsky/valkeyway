@@ -16,10 +16,10 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
@@ -98,11 +98,8 @@ public final class Connection {
     private int db;
     private String name;
     private boolean inTransaction;
-    private List<byte[][]> transactionCommands = new ArrayList<>();
-    private Set<Integer> transactionSlots = new HashSet<>();
-    private String transactionError;
-    private String scanCursorId;
-    private volatile AutoCloseable watchSession;
+    /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
+    private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
 
     Connection(long id, Channel channel, CommandTable commands, Executor executor) {
         this.id = id;
@@ -353,13 +350,13 @@ public final class Connection {
     void markClosed() {
         closed = true;
         waiting.clear();
-        AutoCloseable watch = watchSession;
-        watchSession = null;
-        if (watch != null) {
-            try {
-                watch.close();
-            } catch (Exception e) {
-                log.warn("Failed to release the watch of a closed connection", e);
+        for (ConnectionKey<?> key : List.copyOf(attributes.keySet())) {
+            if (attributes.remove(key) instanceof AutoCloseable resource) {
+                try {
+                    resource.close();
+                } catch (Exception e) {
+                    log.warn("Failed to release {} of a closed connection", key, e);
+                }
             }
         }
     }
@@ -409,49 +406,32 @@ public final class Connection {
         this.inTransaction = inTransaction;
     }
 
-    public List<byte[][]> transactionCommands() {
-        return transactionCommands;
-    }
-
-    public Set<Integer> transactionSlots() {
-        return transactionSlots;
-    }
-
-    public String transactionError() {
-        return transactionError;
-    }
-
-    public void transactionError(String error) {
-        this.transactionError = error;
-    }
-
-    /** Leaves MULTI and forgets everything queued. */
-    public void clearTransaction() {
-        inTransaction = false;
-        transactionCommands = new ArrayList<>();
-        transactionSlots = new HashSet<>();
-        transactionError = null;
-    }
-
     /** Whether the client has disconnected (or is being disconnected). */
     public boolean isClosed() {
         return closed;
     }
 
-    /** The connection's watched keys on a dedicated backend client, or {@code null}. Closed on disconnect. */
-    public AutoCloseable watchSession() {
-        return watchSession;
+    /** The handler state stored under {@code key}, or {@code null}. */
+    @SuppressWarnings("unchecked")
+    public <T> T get(ConnectionKey<T> key) {
+        return (T) attributes.get(key);
     }
 
-    public void watchSession(AutoCloseable watchSession) {
-        this.watchSession = watchSession;
+    /**
+     * Stores handler state under {@code key} ({@code null} removes it). State that is
+     * {@link AutoCloseable} is closed when the client disconnects.
+     */
+    public <T> void set(ConnectionKey<T> key, T value) {
+        if (value == null) {
+            attributes.remove(key);
+        } else {
+            attributes.put(key, value);
+        }
     }
 
-    public String scanCursorId() {
-        return scanCursorId;
-    }
-
-    public void scanCursorId(String scanCursorId) {
-        this.scanCursorId = scanCursorId;
+    /** Removes and returns the state stored under {@code key}. */
+    @SuppressWarnings("unchecked")
+    public <T> T remove(ConnectionKey<T> key) {
+        return (T) attributes.remove(key);
     }
 }

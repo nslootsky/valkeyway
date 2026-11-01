@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
+import io.github.nslootsky.valkeyway.transaction.Transaction;
 import io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.transaction.TransactionQueue;
@@ -29,8 +30,7 @@ public class MultiCommand implements CommandHandler {
             // Like Valkey 9, this also discards the transaction (EXEC answers EXECABORT).
             return TransactionQueue.reject(connection, CommandKeyExtractor.notAllowedInTransaction("multi"));
         }
-        connection.clearTransaction();
-        connection.inTransaction(true);
+        Transaction.begin(connection);
         return Reply.OK;
     }
 }

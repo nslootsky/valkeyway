@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
+import io.github.nslootsky.valkeyway.transaction.Transaction;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
@@ -30,7 +31,7 @@ public class DiscardCommand implements CommandHandler {
         if (!request.connection().inTransaction()) {
             return Reply.error("ERR DISCARD without MULTI");
         }
-        request.connection().clearTransaction();
+        Transaction.end(request.connection());
         // Like Valkey, DISCARD also drops the connection's watches.
         watches.end(request.connection());
         return Reply.OK;

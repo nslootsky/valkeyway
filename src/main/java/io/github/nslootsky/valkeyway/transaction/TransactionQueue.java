@@ -39,18 +39,19 @@ public final class TransactionQueue {
         if (error != null) {
             return reject(connection, error);
         }
-        if (connection.transactionError() == null) {
+        Transaction transaction = Transaction.current(connection);
+        if (transaction.error() == null) {
             for (byte[] key : keys.extractKeys(client, args)) {
-                connection.transactionSlots().add(ClusterSlots.slot(key));
+                transaction.slots().add(ClusterSlots.slot(key));
             }
-            connection.transactionCommands().add(args);
+            transaction.commands().add(args);
         }
         return Reply.QUEUED;
     }
 
     /** Answers a command with {@code error} and discards the transaction (EXEC answers EXECABORT). */
     public static Reply reject(Connection connection, String error) {
-        connection.transactionError(EXECABORT);
+        Transaction.current(connection).error(EXECABORT);
         return Reply.error(error);
     }
 }

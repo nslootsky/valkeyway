@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
+import io.github.nslootsky.valkeyway.transaction.Transaction;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterBatch;
 import io.github.nslootsky.valkeyway.ValkeywayProperties.CrossSlot;
@@ -69,10 +70,10 @@ public class ExecCommand implements CommandHandler {
             return Reply.error("ERR EXEC without MULTI");
         }
 
-        String txError = connection.transactionError();
-        List<byte[][]> buffered = new ArrayList<>(connection.transactionCommands());
-        Set<Integer> slots = new HashSet<>(connection.transactionSlots());
-        connection.clearTransaction();
+        Transaction transaction = Transaction.end(connection);
+        String txError = transaction.error();
+        List<byte[][]> buffered = transaction.commands();
+        Set<Integer> slots = new HashSet<>(transaction.slots());
         // EXEC ends the watch whatever happens next.
         WatchSession watch = watches.take(connection);
         if (watch != null) {
