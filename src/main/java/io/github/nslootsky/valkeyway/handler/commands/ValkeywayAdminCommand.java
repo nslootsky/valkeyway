@@ -99,7 +99,7 @@ public class ValkeywayAdminCommand implements RespCommand {
             String value = request.getParam(3).toString();
             setProxyConfig(key, value);
             log.debug("PROXY CONFIG SET OK value={}", value);
-            return RedisToken.status("OK");
+            return RedisToken.responseOk();
         } else {
             log.debug("PROXY CONFIG ERR wrong number of arguments");
             return RedisToken.error("ERR wrong number of arguments for 'proxy config' command");
