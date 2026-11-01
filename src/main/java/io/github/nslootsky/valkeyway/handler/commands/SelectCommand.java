@@ -5,48 +5,33 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.annotation.Command;
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
-import io.github.nslootsky.valkeyway.handler.SessionState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Request;
 
 /**
- * SELECT command handler. Switches the session to the specified database index.
- * Client is created lazily on first actual use. Not allowed inside MULTI/EXEC.
+ * SELECT: switches the connection's database. The database's Glide client is created lazily on
+ * first use. Not allowed inside MULTI.
  */
-@Command("select")
-public class SelectCommand implements RespCommand {
-
-    private static final Logger log = LoggerFactory.getLogger(SelectCommand.class);
-
-    public SelectCommand() {
-    }
+public class SelectCommand implements CommandHandler {
 
     @Override
-    public RedisToken execute(Request request) {
-        var session = request.getSession();
-        if (SessionState.isInTransaction(session)) {
-            log.debug("SELECT ERR not allowed in MULTI/EXEC");
-            return RedisToken.error("ERR SELECT not allowed in MULTI/EXEC");
+    public Reply execute(Request request) {
+        if (request.connection().inTransaction()) {
+            return Reply.error("ERR SELECT not allowed in MULTI/EXEC");
         }
-        if (request.getLength() < 1) {
-            log.debug("SELECT ERR wrong number of arguments");
-            return RedisToken.error("ERR wrong number of arguments for 'select' command");
+        if (request.argCount() != 1) {
+            return Reply.error("ERR wrong number of arguments for 'select' command");
         }
         try {
-            int db = Integer.parseInt(request.getParam(0).toString());
-            int currentDb = SessionState.getCurrentDb(session);
-            log.debug("SELECT db={} currentDb={}", db, currentDb);
-            if (db != currentDb) {
-                SessionState.setCurrentDb(session, db);
+            int db = Integer.parseInt(request.argString(0));
+            if (db < 0) {
+                return Reply.error("ERR DB index is out of range");
             }
-            return RedisToken.responseOk();
+            request.connection().db(db);
+            return Reply.OK;
         } catch (NumberFormatException e) {
-            log.error("SELECT ERR {}", e.getMessage());
-            return RedisToken.error("ERR value is not an integer or out of range");
+            return Reply.error("ERR value is not an integer or out of range");
         }
     }
 }

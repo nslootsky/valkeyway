@@ -19,8 +19,12 @@ valkey-benchmark "$@" -t set,get -n "$requests" -c 50 -r 100000 -q >/dev/null 2>
 
 for P in 1 16; do
   for c in 1 50 200; do
-    valkey-benchmark "$@" -t set,get -n "$requests" -c "$c" -P "$P" -r 100000 --csv 2>/dev/null |
-      grep -E '^"(SET|GET)"' | tr -d '"' |
+    out=$(valkey-benchmark "$@" -t set,get -n "$requests" -c "$c" -P "$P" -r 100000 --csv 2>&1 || true)
+    if ! grep -qE '^"(SET|GET)"' <<<"$out"; then
+      printf '%-7s c=%-4s P=%-3s FAILED: %s\n' "$label" "$c" "$P" "$(tail -c 300 <<<"$out" | tr '\n\r' '  ')"
+      continue
+    fi
+    grep -E '^"(SET|GET)"' <<<"$out" | tr -d '"' |
       awk -F, -v l="$label" -v c="$c" -v p="$P" \
         '{printf "%-7s c=%-4s P=%-3s %-4s rps=%-11s p50=%-7s p99=%-7s max=%s\n", l, c, p, $1, $2, $5, $7, $8}'
   done

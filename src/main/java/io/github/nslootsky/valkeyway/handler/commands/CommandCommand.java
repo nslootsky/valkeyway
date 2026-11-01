@@ -5,34 +5,27 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.annotation.Command;
-import com.github.tonivade.resp.annotation.ParamLength;
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
-import com.github.tonivade.resp.protocol.SafeString;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
-import io.github.nslootsky.valkeyway.handler.SessionState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.reply.GlideReplies;
+import io.github.nslootsky.valkeyway.reply.ServerErrors;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Request;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * COMMAND subcommand handler. Proxies all COMMAND variants to backend via Glide's customCommand().
- * For COMMAND DOCS, converts flag values "optional"/"multiple"/"multiple_token" to status tokens
- * for redis-cli compatibility (redis-cli expects REDIS_REPLY_STATUS for these flags).
+ * COMMAND: all subcommands are proxied. For COMMAND DOCS, the argument flag values "optional",
+ * "multiple" and "multiple_token" are sent as status replies, as Valkey does; redis-cli asserts on it.
  */
-@Command("command")
-@ParamLength(value = 0, option = 10)
-public class CommandCommand implements RespCommand {
-
-    private static final Logger log = LoggerFactory.getLogger(CommandCommand.class);
+public class CommandCommand implements CommandHandler {
 
     /**
      * redis-cli barfs if flag values aren't simple strings:
@@ -47,109 +40,49 @@ public class CommandCommand implements RespCommand {
     }
 
     @Override
-    public RedisToken execute(Request request) {
-        log.debug("COMMAND args={}", toArgs(request));
-
+    public Reply execute(Request request) {
         try {
-            GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
-            GlideString[] cmdArgs = toGlideArgs(request);
+            GlideClusterClient client = glideClientCache.getClient(request.connection().db());
+            byte[][] args = request.args();
+            GlideString[] cmdArgs = new GlideString[args.length];
+            for (int i = 0; i < args.length; i++) {
+                cmdArgs[i] = GlideString.of(args[i]);
+            }
             ClusterValue<Object> result = client.customCommand(cmdArgs).get();
-
-            log.debug("OK COMMAND result={}, hasSingle={}, hasMulti={}",
-                    TokenUtils.summarize(result), result.hasSingleData(), result.hasMultiData());
-
-            if (isCommandDocs(request)) {
-                return toRedisTokenForDocs(result);
+            if (request.argCount() >= 1 && request.argString(0).equalsIgnoreCase("DOCS")) {
+                return toReplyForDocs(result.hasSingleData() ? result.getSingleValue() : result.getMultiValue());
             }
-            return TokenUtils.toRedisToken(result);
+            return GlideReplies.toReply(result);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Reply.error("ERR interrupted");
         } catch (Exception e) {
-            log.error("ERR COMMAND error={}", e.getMessage());
-            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
+            return ServerErrors.error(e);
         }
     }
 
-    private boolean isCommandDocs(Request request) {
-        if (request.getLength() < 1) {
-            return false;
-        }
-        String subCmd = request.getParam(0).toString().toUpperCase();
-        return "DOCS".equals(subCmd);
-    }
-
-    private List<String> toArgs(Request request) {
-        List<String> args = new ArrayList<>();
-        args.add(request.getCommand());
-        for (var param : request.getParams()) {
-            args.add(param.toString());
-        }
-        return args;
-    }
-
-    private GlideString[] toGlideArgs(Request request) {
-        List<GlideString> args = new ArrayList<>();
-        args.add(GlideString.of(request.getCommand()));
-        for (var param : request.getParams()) {
-            args.add(GlideString.of(param.getBytes()));
-        }
-        return args.toArray(new GlideString[0]);
-    }
-
-    RedisToken toRedisTokenForDocs(ClusterValue<Object> clusterValue) {
-        if (clusterValue == null) {
-            return RedisToken.nullString();
-        }
-        if (clusterValue.hasSingleData()) {
-            return toRedisTokenForDocs(clusterValue.getSingleValue());
-        } else if (clusterValue.hasMultiData()) {
-            return toRedisTokenForDocs(clusterValue.getMultiValue());
-        }
-        return RedisToken.nullString();
-    }
-
-    RedisToken toRedisTokenForDocs(Object value) {
+    Reply toReplyForDocs(Object value) {
         return switch (value) {
-            case null -> RedisToken.nullString();
-            case GlideString gs -> {
-                String str = gs.getString();
-                if (DOC_FLAG_VALUES.contains(str)) {
-                    yield RedisToken.status(str);
+            case GlideString gs when DOC_FLAG_VALUES.contains(gs.getString()) -> new Reply.Simple(gs.getString());
+            case String s when DOC_FLAG_VALUES.contains(s) -> new Reply.Simple(s);
+            case String s -> new Reply.Bulk(s.getBytes(StandardCharsets.UTF_8));
+            case Object[] arr -> {
+                List<Reply> items = new ArrayList<>(arr.length);
+                for (Object v : arr) {
+                    items.add(toReplyForDocs(v));
                 }
-                byte[] bytes = gs.getBytes();
-                yield RedisToken.string(new SafeString(bytes));
+                yield new Reply.Array(items);
             }
-            case String s -> {
-                if (DOC_FLAG_VALUES.contains(s)) {
-                    yield RedisToken.status(s);
+            case java.util.Collection<?> list -> toReplyForDocs(list.toArray());
+            case Map<?, ?> map -> {
+                List<Reply> items = new ArrayList<>(map.size() * 2);
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    items.add(toReplyForDocs(entry.getKey()));
+                    items.add(toReplyForDocs(entry.getValue()));
                 }
-                if ("OK".equals(s)) {
-                    yield RedisToken.responseOk();
-                }
-                yield RedisToken.string(s);
+                yield new Reply.MapReply(items);
             }
-            case Number n -> TokenUtils.toRedisToken(n);
-            case Boolean b -> RedisToken.integer(b ? 1 : 0);
-            case Object[] arr -> toRedisArrayForDocs(arr);
-            case java.util.Collection<?> list -> toRedisArrayForDocs(list.toArray());
-            case java.util.Map<?, ?> map -> {
-                List<RedisToken> tokens = new ArrayList<>();
-                for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
-                    tokens.add(toRedisTokenForDocs(entry.getKey()));
-                    tokens.add(toRedisTokenForDocs(entry.getValue()));
-                }
-                yield RedisToken.array(tokens);
-            }
-            default -> RedisToken.string(value.toString());
+            case null, default -> GlideReplies.toReply(value);
         };
-    }
-
-    private RedisToken toRedisArrayForDocs(Object[] values) {
-        if (values == null) {
-            return RedisToken.nullString();
-        }
-        List<RedisToken> tokens = new ArrayList<>();
-        for (Object v : values) {
-            tokens.add(toRedisTokenForDocs(v));
-        }
-        return RedisToken.array(tokens);
     }
 }

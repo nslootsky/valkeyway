@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.reply;
 
 import glide.api.models.GlideString;
+import io.github.nslootsky.valkeyway.protocol.Reply;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -30,9 +31,18 @@ public final class Resp2Shapes {
 
     /** Reshapes {@code value}, the reply to {@code args} (args[0] = command name). */
     public static Object shape(byte[][] args, Object value) {
-        // Every command handled here has a name of 5+ chars starting with x, z, h, g or b, so the
+        if (args.length == 0 || args[0].length == 0) {
+            return value;
+        }
+        if (value == null) {
+            return nullReply(args);
+        }
+        if (value instanceof GlideString status && isStatusCommand(args[0])) {
+            return new Reply.Simple(status.getString());
+        }
+        // Every command reshaped below has a name of 5+ chars starting with x, z, h, g or b, so the
         // hot short commands (GET, SET, HGET, HSET, ZADD, ...) exit without allocating.
-        if (value == null || args.length == 0 || args[0].length < 5) {
+        if (args[0].length < 5) {
             return value;
         }
         switch (args[0][0] | 0x20) {
@@ -56,8 +66,67 @@ public final class Resp2Shapes {
             case "geopos" -> positions(value);
             case "geosearch", "georadius", "georadius_ro", "georadiusbymember", "georadiusbymember_ro" ->
                     geoResults(args, value);
+            case "xpending" -> pendingSummary(args, value);
             default -> value;
         };
+    }
+
+    // --- status replies ---
+
+    /**
+     * Commands whose reply is a status (simple string) other than OK. With binary output Glide
+     * returns those as GlideString, indistinguishable from a bulk string, so they're listed here.
+     */
+    private static final java.util.Set<String> STATUS_COMMANDS = java.util.Set.of(
+            "type", "bgsave", "bgrewriteaof", "migrate");
+
+    private static boolean isStatusCommand(byte[] name) {
+        switch (name[0] | 0x20) {
+            case 't', 'b', 'm' -> { }
+            default -> {
+                return false;
+            }
+        }
+        return name.length <= 12
+                && STATUS_COMMANDS.contains(new String(name, StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT));
+    }
+
+    // --- nulls ---
+
+    /** Commands whose "nothing" reply is a null array ({@code *-1}) in RESP2, not a null bulk string. */
+    private static final java.util.Set<String> NULL_ARRAY_COMMANDS = java.util.Set.of(
+            // blocking timeouts (blocked.c replyToBlockedClientTimedOut: list, zset and stream types)
+            "blpop", "brpop", "blmove", "brpoplpush", "blmpop", "bzpopmin", "bzpopmax", "bzmpop",
+            // no data
+            "lmpop", "zmpop", "xread", "xreadgroup",
+            // XRANGE ... COUNT 0
+            "xrange", "xrevrange");
+
+    /**
+     * Glide returns Java null for both RESP2 nulls; pick the one Valkey sends for this command
+     * (from the server's addReplyNullArray call sites).
+     */
+    private static Object nullReply(byte[][] args) {
+        if (args[0].length > 10) {
+            return null;
+        }
+        String name = new String(args[0], StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT);
+        boolean nullArray = NULL_ARRAY_COMMANDS.contains(name)
+                // LPOP/RPOP with a count on a missing key
+                || ((name.equals("lpop") || name.equals("rpop")) && args.length > 2)
+                // ZRANK/ZREVRANK ... WITHSCORE for a missing member
+                || ((name.equals("zrank") || name.equals("zrevrank")) && hasOption(args, "WITHSCORE"));
+        return nullArray ? Reply.Null.ARRAY : null;
+    }
+
+    /** XPENDING key group (summary form): an empty consumer list is a null array. */
+    private static Object pendingSummary(byte[][] args, Object value) {
+        if (args.length == 3 && value instanceof Object[] arr && arr.length == 4 && arr[3] == null) {
+            Object[] out = arr.clone();
+            out[3] = Reply.Null.ARRAY;
+            return out;
+        }
+        return value;
     }
 
     // --- streams ---
@@ -70,7 +139,9 @@ public final class Resp2Shapes {
         Object[] out = new Object[map.size()];
         int i = 0;
         for (Map.Entry<?, ?> entry : map.entrySet()) {
-            out[i++] = new Object[]{entry.getKey(), flattenPairs(entry.getValue())};
+            Object fields = entry.getValue();
+            // A deleted entry still pending in a group has null fields: a null array in RESP2.
+            out[i++] = new Object[]{entry.getKey(), fields == null ? Reply.Null.ARRAY : flattenPairs(fields)};
         }
         return out;
     }
@@ -162,6 +233,9 @@ public final class Resp2Shapes {
     }
 
     private static Object coordinatePair(Object value) {
+        if (value == null) {
+            return Reply.Null.ARRAY; // GEOPOS of a missing member
+        }
         Object[] pair = toArray(value);
         if (pair == null) {
             return value;

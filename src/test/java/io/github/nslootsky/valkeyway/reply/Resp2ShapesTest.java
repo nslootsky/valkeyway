@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.reply;
 
 import glide.api.models.GlideString;
+import io.github.nslootsky.valkeyway.protocol.Reply;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -53,7 +54,7 @@ class Resp2ShapesTest {
         Object[] shaped = (Object[]) Resp2Shapes.shape(args("XRANGE s - +"), entries);
 
         assertArrayEquals(new Object[]{g("1-1"), new Object[]{g("f"), g("v"), g("g"), g("w")}}, (Object[]) shaped[0]);
-        assertArrayEquals(new Object[]{g("1-2"), null}, (Object[]) shaped[1]);
+        assertArrayEquals(new Object[]{g("1-2"), Reply.Null.ARRAY}, (Object[]) shaped[1], "deleted entry: *-1 fields");
     }
 
     @Test
@@ -76,7 +77,8 @@ class Resp2ShapesTest {
         assertSame(scalar, Resp2Shapes.shape(args("XRANGE s - +"), scalar));
         Object[] mixed = {new Object[]{g("a"), g("b")}, g("not a pair")};
         assertSame(mixed, Resp2Shapes.shape(args("HRANDFIELD h -2 WITHVALUES"), mixed));
-        assertNull(Resp2Shapes.shape(args("XREAD STREAMS s 0"), null));
+        assertEquals(Reply.Null.ARRAY, Resp2Shapes.shape(args("XREAD STREAMS s 0"), null), "no data: *-1");
+        assertNull(Resp2Shapes.shape(args("GET k"), null), "missing value: $-1");
     }
 
     @Test

@@ -61,7 +61,7 @@ class BlockingCommandsTest extends IntegrationTestBase {
             assertEquals("v", reply[0], "GET must not fail behind the BLPOP");
             assertTrue(ms < 500, "GET took " + ms + "ms while another client was blocked");
             assertFalse(blocked.isDone(), "BLPOP should still be waiting");
-            assertNull(blocked.get(5, TimeUnit.SECONDS));
+            assertEquals(RawRespClient.NULL_ARRAY, blocked.get(5, TimeUnit.SECONDS));
         }
     }
 
@@ -90,7 +90,7 @@ class BlockingCommandsTest extends IntegrationTestBase {
     void blpopTimesOutWithNil() throws Exception {
         try (RawRespClient c = connect()) {
             c.call("DEL", "{bc:d}list");
-            assertNull(c.call("BLPOP", "{bc:d}list", "0.2"));
+            assertEquals(RawRespClient.NULL_ARRAY, c.call("BLPOP", "{bc:d}list", "0.2"));
         }
     }
 
@@ -129,7 +129,7 @@ class BlockingCommandsTest extends IntegrationTestBase {
             c.call("RPUSH", "{bc:f}list", "in-db1-again");
             c.call("SELECT", "0");
             c.call("DEL", "{bc:f}list");
-            assertNull(c.call("BLPOP", "{bc:f}list", "0.2"), "db0 must not see db1's list");
+            assertEquals(RawRespClient.NULL_ARRAY, c.call("BLPOP", "{bc:f}list", "0.2"), "db0 must not see db1's list");
         }
     }
 

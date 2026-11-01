@@ -47,11 +47,6 @@
             <artifactId>valkey-glide</artifactId>
             <version>2.5.3</version>
         </dependency>
-        <dependency>
-            <groupId>com.github.tonivade</groupId>
-            <artifactId>resp-server</artifactId>
-            <version>1.0.1</version>
-        </dependency>
         <!-- Client-facing RESP server (versions managed by Spring Boot's Netty BOM) -->
         <dependency>
             <groupId>io.netty</groupId>

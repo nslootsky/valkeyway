@@ -5,37 +5,26 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Request;
 
-import java.util.Map;
+import java.util.List;
 
 /**
- * HELLO command handler. Returns standalone mode response for Glide compatibility.
- * Does not require backend connection - returns hardcoded server info.
+ * HELLO: answers like a standalone server speaking RESP2, without contacting the cluster.
  */
-public class HelloCommand implements RespCommand {
-
-    private static final Logger log = LoggerFactory.getLogger(HelloCommand.class);
-
-    public HelloCommand() {
-    }
+public class HelloCommand implements CommandHandler {
 
     @Override
-    public RedisToken execute(Request request) {
-        log.debug("HELLO args={}", request.getParams());
-        Map<String, Object> response = Map.of(
-                "server", "valkeyway",
-                "version", "0.1.0",
-                "proto", 2,
-                "id", System.currentTimeMillis(),
-                "mode", "standalone",
-                "modules", java.util.List.of()
-        );
-        log.debug("HELLO OK mode=standalone");
-        return TokenUtils.toRedisToken(response);
+    public Reply execute(Request request) {
+        return new Reply.MapReply(List.of(
+                Reply.bulk("server"), Reply.bulk("valkeyway"),
+                Reply.bulk("version"), Reply.bulk("0.1.0"),
+                Reply.bulk("proto"), Reply.integer(2),
+                Reply.bulk("id"), Reply.integer(request.connection().id()),
+                Reply.bulk("mode"), Reply.bulk("standalone"),
+                Reply.bulk("role"), Reply.bulk("master"),
+                Reply.bulk("modules"), Reply.EMPTY_ARRAY));
     }
 }

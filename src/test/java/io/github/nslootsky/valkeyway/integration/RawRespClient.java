@@ -24,13 +24,18 @@ import java.util.List;
  *
  * <p>Replies map to: {@code +status} → {@link Status}, {@code -error} → {@link Error},
  * {@code :n} → {@link Long}, {@code $bulk} → {@link String}, {@code *array} → {@link List},
- * null bulk/array → {@code null}.
+ * null bulk ({@code $-1}) → {@code null}, null array ({@code *-1}) → {@link #NULL_ARRAY}.
  */
 public class RawRespClient implements AutoCloseable {
 
     public record Status(String value) {}
 
     public record Error(String message) {}
+
+    /** The RESP2 null array, {@code *-1}, as distinct from the null bulk string. */
+    public enum Nil { ARRAY }
+
+    public static final Nil NULL_ARRAY = Nil.ARRAY;
 
     private final Socket socket;
     private final OutputStream out;
@@ -76,7 +81,7 @@ public class RawRespClient implements AutoCloseable {
             case '*' -> {
                 int len = Integer.parseInt(line);
                 if (len < 0) {
-                    yield null;
+                    yield NULL_ARRAY;
                 }
                 List<Object> items = new ArrayList<>();
                 for (int i = 0; i < len; i++) {

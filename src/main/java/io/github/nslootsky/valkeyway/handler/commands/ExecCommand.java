@@ -5,16 +5,17 @@
 
 package io.github.nslootsky.valkeyway.handler.commands;
 
-import com.github.tonivade.resp.annotation.Command;
-import com.github.tonivade.resp.command.Request;
-import com.github.tonivade.resp.command.RespCommand;
-import com.github.tonivade.resp.protocol.RedisToken;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterBatch;
 import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
-import io.github.nslootsky.valkeyway.handler.SessionState;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.reply.GlideReplies;
 import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
+import io.github.nslootsky.valkeyway.reply.ServerErrors;
+import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.Connection;
+import io.github.nslootsky.valkeyway.server.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,12 +23,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * EXEC command handler. Executes queued transaction commands.
- * Uses ClusterBatch(true) for single-slot, ClusterBatch(false) for cross-slot.
- * Per-command failures are returned as error elements in the result array.
+ * EXEC: runs the queued transaction. Uses an atomic ClusterBatch when all keys share a slot and a
+ * non-atomic one otherwise. Per-command failures are returned as error elements in the result array.
  */
-@Command("exec")
-public class ExecCommand implements RespCommand {
+public class ExecCommand implements CommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ExecCommand.class);
 
@@ -38,27 +37,26 @@ public class ExecCommand implements RespCommand {
     }
 
     @Override
-    public RedisToken execute(Request request) {
-        var session = request.getSession();
-        if (!SessionState.isInTransaction(session)) {
-            return RedisToken.error("ERR EXEC without MULTI");
+    public Reply execute(Request request) {
+        Connection connection = request.connection();
+        if (!connection.inTransaction()) {
+            return Reply.error("ERR EXEC without MULTI");
         }
 
-        String txError = SessionState.getTransactionError(session);
-        List<byte[][]> buffered = new ArrayList<>(SessionState.getTransactionCommands(session));
-        boolean crossSlot = SessionState.getTransactionSlots(session).size() > 1;
-        SessionState.clearTransactionState(session);
+        String txError = connection.transactionError();
+        List<byte[][]> buffered = new ArrayList<>(connection.transactionCommands());
+        boolean crossSlot = connection.transactionSlots().size() > 1;
+        connection.clearTransaction();
 
         if (txError != null) {
-            return RedisToken.error(txError);
+            return Reply.error(txError);
         }
-
         if (buffered.isEmpty()) {
-            return RedisToken.array();
+            return Reply.EMPTY_ARRAY;
         }
 
         try {
-            GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
+            GlideClusterClient client = glideClientCache.getClient(connection.db());
             ClusterBatch batch = new ClusterBatch(!crossSlot).withBinaryOutput();
             for (byte[][] cmdBytes : buffered) {
                 GlideString[] cmdArgs = new GlideString[cmdBytes.length];
@@ -73,19 +71,21 @@ public class ExecCommand implements RespCommand {
             // matching Valkey's EXEC semantics, instead of failing the whole reply.
             Object[] results = client.exec(batch, false).get();
             if (results == null) {
-                // Aborted by WATCH. Valkey replies with a null array (*-1); resp-server 1.0 cannot
-                // encode one, so send the null bulk string, which clients also read as nil.
                 log.debug("EXEC aborted (WATCH)");
-                return RedisToken.nullString();
+                return Reply.Null.ARRAY;
             }
-            log.debug("EXEC OK results={}", results.length);
-            for (int i = 0; i < results.length && i < buffered.size(); i++) {
-                results[i] = Resp2Shapes.shape(buffered.get(i), results[i]);
+            List<Reply> replies = new ArrayList<>(results.length);
+            for (int i = 0; i < results.length; i++) {
+                Object value = i < buffered.size() ? Resp2Shapes.shape(buffered.get(i), results[i]) : results[i];
+                replies.add(GlideReplies.toReply(value));
             }
-            return TokenUtils.toRedisArray(results);
+            return new Reply.Array(replies);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Reply.error("ERR interrupted");
         } catch (Exception e) {
-            log.error("EXEC ERR {}", e.getMessage());
-            return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
+            log.debug("EXEC ERR {}", e.getMessage());
+            return ServerErrors.error(e);
         }
     }
 }
