@@ -5,6 +5,8 @@
 
 package io.github.nslootsky.valkeyway.server;
 
+import io.github.nslootsky.valkeyway.protocol.Reply;
+
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
@@ -35,9 +37,13 @@ public final class CommandTable {
     /**
      * The handler for {@code name} on a connection that may be inside MULTI: commands that would be
      * queued go to the fallback handler (which queues them), and rejected ones to the rejecting handler.
+     * A connection that hasn't authenticated gets NOAUTH for everything not allowed before AUTH.
      */
-    public CommandHandler lookup(byte[] name, boolean inTransaction) {
+    public CommandHandler lookup(byte[] name, boolean inTransaction, boolean authenticated) {
         CommandHandler handler = lookup(name);
+        if (!authenticated && !handler.allowedBeforeAuth()) {
+            return NOAUTH;
+        }
         if (!inTransaction) {
             return handler;
         }
@@ -47,6 +53,9 @@ public final class CommandTable {
             case REJECT -> rejectInTransaction != null ? rejectInTransaction : fallback;
         };
     }
+
+    // [upstream:V7]
+    private static final InlineCommandHandler NOAUTH = _ -> Reply.error("NOAUTH Authentication required.");
 
     private CommandHandler rejectInTransaction;
     private CommandListener listener = CommandListener.NONE;

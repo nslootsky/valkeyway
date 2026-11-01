@@ -15,6 +15,7 @@ import io.netty.handler.timeout.IdleStateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLException;
 import java.io.IOException;
 
 /**
@@ -86,7 +87,8 @@ final class ConnectionHandler extends ChannelInboundHandlerAdapter {
             ctx.writeAndFlush(Reply.error(protocol.reply())).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        if (cause instanceof IOException) {
+        if (cause instanceof IOException || cause.getCause() instanceof SSLException) {
+            // Includes failed TLS handshakes and plain text sent to the TLS port.
             log.debug("Client connection error: {}", cause.getMessage());
         } else {
             log.warn("Unexpected error on client connection", cause);

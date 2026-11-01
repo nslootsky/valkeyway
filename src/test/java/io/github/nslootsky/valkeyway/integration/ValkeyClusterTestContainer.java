@@ -11,7 +11,11 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.DockerImageName;
 
+import io.github.nslootsky.valkeyway.server.TestCertificates;
+import org.testcontainers.utility.MountableFile;
+
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +31,7 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
     private final List<GenericContainer<?>> nodes = new ArrayList<>();
     private final List<String> members = new ArrayList<>();
     private final List<String> spares = new ArrayList<>();
+    private final List<String> tlsMembers = new ArrayList<>();
     private final int replicasPerPrimary;
 
     public ValkeyClusterTestContainer(int numNodes) {
@@ -35,23 +40,44 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
 
     public ValkeyClusterTestContainer(int primaries, int replicasPerPrimary, int spareNodes, int basePort,
                                       int nodeTimeoutMs, String extraArgs) {
+        this(primaries, replicasPerPrimary, spareNodes, basePort, nodeTimeoutMs, extraArgs, null);
+    }
+
+    /**
+     * @param tls with certificates, each node also listens for TLS on {@link #tlsPort} (its plain-text
+     *            port stays open, for setup and checks), and the cluster bus uses TLS. Clients
+     *            connecting over TLS are told the nodes' TLS ports. Client certificates aren't required.
+     */
+    public ValkeyClusterTestContainer(int primaries, int replicasPerPrimary, int spareNodes, int basePort,
+                                      int nodeTimeoutMs, String extraArgs, TestCertificates tls) {
         this.replicasPerPrimary = replicasPerPrimary;
         int memberCount = primaries * (1 + replicasPerPrimary);
         for (int i = 0; i < memberCount + spareNodes; i++) {
             int port = basePort + i;
             // The cluster bus defaults to port + 10000, which for 27xxx lands in Linux's ephemeral
             // range (32768-60999), where outgoing connections from busy tests can already hold it.
+            String tlsArgs = tls == null ? "" : String.format(
+                    " --tls-port %d --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key"
+                            + " --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no --tls-cluster yes", tlsPort(port));
             GenericContainer<?> node = new GenericContainer<>(VALKEY_IMAGE)
                     .withNetworkMode("host")
                     .withCommand(String.format(
                             "--port %d --cluster-port %d --cluster-enabled yes --cluster-config-file nodes.conf " +
                                     "--cluster-node-timeout %d --appendonly yes --daemonize no --bind 0.0.0.0 " +
                                     "--cluster-databases 16 %s",
-                            port, busPort(port), nodeTimeoutMs, extraArgs
+                            port, busPort(port), nodeTimeoutMs, (extraArgs + tlsArgs).trim()
                     ))
                     // With host networking there are no mapped ports to probe; wait for the server itself.
                     .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*", 1))
                     .withStartupTimeout(Duration.ofMinutes(2));
+            if (tls != null) {
+                for (String file : List.of("ca.crt", "server.crt", "server.key")) {
+                    node.withCopyFileToContainer(MountableFile.forHostPath(tls.dir().resolve(file), 0644), "/tls/" + file);
+                }
+                if (i < memberCount) {
+                    tlsMembers.add("127.0.0.1:" + tlsPort(port));
+                }
+            }
             nodes.add(node);
             (i < memberCount ? members : spares).add("127.0.0.1:" + port);
         }
@@ -114,6 +140,31 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
             return !replication.contains("role:slave") || replication.contains("master_link_status:up");
         } catch (IOException | RuntimeException e) {
             return false;
+        }
+    }
+
+    /** The TLS port of the node listening on {@code port}, in a TLS cluster. */
+    public static int tlsPort(int port) {
+        return port + 1000;
+    }
+
+    /** TLS addresses of the cluster's members, in a TLS cluster. */
+    public List<String> getTlsNodeAddresses() {
+        return new ArrayList<>(tlsMembers);
+    }
+
+    /** Runs {@code args} on every member over plain text (e.g. CONFIG SET, ACL SETUSER). */
+    public void onEveryNode(String... args) {
+        for (String address : members) {
+            String[] hostPort = address.split(":");
+            try (RawRespClient client = new RawRespClient(hostPort[0], Integer.parseInt(hostPort[1]))) {
+                Object reply = client.call(args);
+                if (reply instanceof RawRespClient.Error error) {
+                    throw new IllegalStateException(address + ": " + error.message());
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 

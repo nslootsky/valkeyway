@@ -23,10 +23,12 @@ final class ServerContext implements ClientRegistry {
     private final CommandTable commands;
     private final Executor executor;
     private final int maxClients;
+    private final boolean authRequired;
     private final AtomicLong nextId = new AtomicLong(1);
     private final Map<Long, Connection> clients = new ConcurrentHashMap<>();
 
-    ServerContext(CommandTable commands, Executor executor, int maxClients) {
+    ServerContext(CommandTable commands, Executor executor, int maxClients, boolean authRequired) {
+        this.authRequired = authRequired;
         this.commands = commands;
         this.executor = executor;
         this.maxClients = maxClients;
@@ -37,7 +39,7 @@ final class ServerContext implements ClientRegistry {
         if (clients.size() >= maxClients) {
             return null;
         }
-        Connection connection = new Connection(nextId.getAndIncrement(), channel, commands, executor, this);
+        Connection connection = new Connection(nextId.getAndIncrement(), channel, commands, executor, this, authRequired);
         clients.put(connection.id(), connection);
         return connection;
     }

@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.commands;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
+import io.github.nslootsky.valkeyway.server.Users;
 import io.github.nslootsky.valkeyway.server.Request;
 import io.github.nslootsky.valkeyway.transaction.Transaction;
 import io.github.nslootsky.valkeyway.transaction.WatchSession;
@@ -81,7 +82,7 @@ public class ClientCommand implements CommandHandler {
         return Reply.error("ERR wrong number of arguments for 'client|" + sub + "' command");
     }
 
-    private static Reply setName(Connection connection, String name) {
+    static Reply setName(Connection connection, String name) {
         if (hasSpecialChars(name)) {
             return Reply.error("ERR Client names cannot contain spaces, newlines or special characters.");
         }
@@ -222,7 +223,7 @@ public class ClientCommand implements CommandHandler {
                     }
                     filters.add(_ -> type.equals("normal"));
                 }
-                case "user" -> filters.add(_ -> value.equals("default"));
+                case "user" -> filters.add(c -> value.equals(userOf(c)));
                 case "addr" -> filters.add(c -> address(c.remoteAddress()).equals(value));
                 case "laddr" -> filters.add(c -> address(c.localAddress()).equals(value));
                 case "skipme" -> {
@@ -276,7 +277,7 @@ public class ClientCommand implements CommandHandler {
 
     /**
      * One client in CLIENT LIST format, with the fields Valkey 9 prints. Values the proxy doesn't track
-     * (buffers, memory, network totals) are 0; every client is a RESP2 client of the default user.
+     * (buffers, memory, network totals) are 0; every client is a RESP2 client.
      */
     String line(Connection c) {
         boolean multi = c.inTransaction();
@@ -311,11 +312,17 @@ public class ClientCommand implements CommandHandler {
                 + " qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=0 rbp=0 obl=0 oll=0 omem=0 tot-mem=0"
                 + " events=r"
                 + " cmd=" + (last == null ? "NULL" : new String(last, StandardCharsets.ISO_8859_1).toLowerCase(Locale.ROOT))
-                + " user=default redir=-1 resp=2"
+                + " user=" + userOf(c) + " redir=-1 resp=2"
                 + " lib-name=" + c.libName()
                 + " lib-ver=" + c.libVersion()
                 + " tot-net-in=0 tot-net-out=0"
                 + " tot-cmds=" + c.totalCommands();
+    }
+
+    /** As Valkey, a connection that hasn't authenticated yet shows as the default user. */
+    private static String userOf(Connection c) {
+        String user = c.user();
+        return user == null ? Users.DEFAULT : user;
     }
 
     private static String address(InetSocketAddress address) {

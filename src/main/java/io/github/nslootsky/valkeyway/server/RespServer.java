@@ -40,8 +40,33 @@ public final class RespServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(RespServer.class);
 
-    /** Server settings; see {@code ValkeywayProperties.Clients}. */
-    public record Settings(String host, int port, int ioThreads, int maxClients, long idleTimeoutSeconds) {}
+    /**
+     * Server settings; see {@code ValkeywayProperties}.
+     *
+     * @param port    plain-text port, 0 for any free port, or -1 for none
+     * @param tlsPort TLS port, 0 for any free port, or -1 for none
+     * @param tls     TLS settings, required with a TLS port
+     * @param authRequired whether connections must AUTH first
+     */
+    public record Settings(String host, int port, int tlsPort, TlsContext tls, int ioThreads, int maxClients,
+                           long idleTimeoutSeconds, boolean authRequired) {
+        public Settings {
+            if (port < 0 && tlsPort < 0) {
+                throw new IllegalArgumentException("Neither a port nor a TLS port to listen on");
+            }
+            if (tlsPort >= 0 && tls == null) {
+                throw new IllegalArgumentException("A TLS port needs TLS settings");
+            }
+        }
+
+        /** Plain text only, without passwords (tests). */
+        public Settings(String host, int port, int ioThreads, int maxClients, long idleTimeoutSeconds) {
+            this(host, port, -1, null, ioThreads, maxClients, idleTimeoutSeconds, false);
+        }
+    }
+
+    /** How often the TLS files are checked for a rotated certificate. */
+    static final long TLS_RELOAD_SECONDS = 60;
 
     private final Settings settings;
     private final ExecutorService executor;
@@ -49,11 +74,12 @@ public final class RespServer implements AutoCloseable {
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
+    private Channel tlsChannel;
 
     public RespServer(Settings settings, CommandTable commands) {
         this.settings = settings;
         this.executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("client-", 0).factory());
-        this.context = new ServerContext(commands, executor, settings.maxClients());
+        this.context = new ServerContext(commands, executor, settings.maxClients(), settings.authRequired());
     }
 
     public void start() throws InterruptedException {
@@ -63,7 +89,21 @@ public final class RespServer implements AutoCloseable {
         bossGroup = new MultiThreadIoEventLoopGroup(1, io);
         workerGroup = new MultiThreadIoEventLoopGroup(settings.ioThreads(), io);
 
-        ServerBootstrap bootstrap = new ServerBootstrap()
+        if (settings.port() >= 0) {
+            serverChannel = bootstrap(channelType, false).bind(settings.host(), settings.port()).sync().channel();
+            log.info("Listening on {} ({} transport, {} I/O threads)", serverChannel.localAddress(),
+                    epoll ? "epoll" : "nio", settings.ioThreads());
+        }
+        if (settings.tlsPort() >= 0) {
+            tlsChannel = bootstrap(channelType, true).bind(settings.host(), settings.tlsPort()).sync().channel();
+            log.info("Listening for TLS on {}", tlsChannel.localAddress());
+            bossGroup.next().scheduleWithFixedDelay(settings.tls()::reloadIfChanged,
+                    TLS_RELOAD_SECONDS, TLS_RELOAD_SECONDS, TimeUnit.SECONDS);
+        }
+    }
+
+    private ServerBootstrap bootstrap(Class<? extends ServerChannel> channelType, boolean tls) {
+        return new ServerBootstrap()
                 .group(bossGroup, workerGroup)
                 .channel(channelType)
                 .option(ChannelOption.SO_BACKLOG, 1024)
@@ -74,23 +114,28 @@ public final class RespServer implements AutoCloseable {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
+                        if (tls) {
+                            ch.pipeline().addLast(settings.tls().current().newHandler(ch.alloc()));
+                        }
                         if (settings.idleTimeoutSeconds() > 0) {
                             ch.pipeline().addLast(new IdleStateHandler(0, 0, settings.idleTimeoutSeconds(), TimeUnit.SECONDS));
                         }
                         ch.pipeline()
                                 .addLast(ReplyEncoder.INSTANCE)
-                                .addLast(new RespDecoder())
+                                .addLast(new RespDecoder(settings.authRequired()))
                                 .addLast(new ConnectionHandler(context));
                     }
                 });
-        serverChannel = bootstrap.bind(settings.host(), settings.port()).sync().channel();
-        log.info("Listening on {} ({} transport, {} I/O threads)", serverChannel.localAddress(),
-                epoll ? "epoll" : "nio", settings.ioThreads());
     }
 
-    /** The bound port (useful when started on port 0). */
+    /** The bound plain-text port. */
     public int port() {
         return ((InetSocketAddress) serverChannel.localAddress()).getPort();
+    }
+
+    /** The bound TLS port. */
+    public int tlsPort() {
+        return ((InetSocketAddress) tlsChannel.localAddress()).getPort();
     }
 
     Collection<Connection> clients() {
@@ -101,6 +146,9 @@ public final class RespServer implements AutoCloseable {
     public void close() {
         if (serverChannel != null) {
             serverChannel.close().syncUninterruptibly();
+        }
+        if (tlsChannel != null) {
+            tlsChannel.close().syncUninterruptibly();
         }
         if (workerGroup != null) {
             workerGroup.shutdownGracefully(0, 2, TimeUnit.SECONDS).syncUninterruptibly();

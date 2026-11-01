@@ -55,6 +55,13 @@ valkey-cli GET mykey
 
 **Cluster changes**: slot migrations, new shards, failovers and a re-pointed seed DNS name are handled under live traffic. See [Cluster changes](#cluster-changes) for what clients see in each case.
 
+**Security**
+- Client authentication: a password for the default user (like `requirepass`) and named users, with AUTH and HELLO ... AUTH. Until a client authenticates it gets NOAUTH, and its requests are size-limited as in Valkey.
+- TLS for clients on a separate port, alongside or instead of plain text, optionally requiring client certificates. Certificates are reloaded when their files change.
+- TLS and a username/password to the cluster.
+
+All of it is off by default; [docs/SECURITY.md](docs/SECURITY.md) shows how to set it up.
+
 **Operations**: health checks, metrics and Prometheus through Spring Boot Actuator on port 6380.
 
 ## Architecture
@@ -125,6 +132,25 @@ proxy:
       idle-timeout-seconds: 60  # Close a pooled client after this long unused
       acquire-timeout-ms: 2000  # How long WATCH waits for a free client before failing
   node-admin-commands: reject   # SHUTDOWN, REPLICAOF, CONFIG SET, ...: reject, or forward (to whichever node Glide picks)
+  auth:                         # Client authentication; unset = none (like a server without requirepass)
+    password: ${VALKEYWAY_PASSWORD:}  # The default user's password: AUTH <password>
+    users:                      # Named users: AUTH <user> <password>. Every user can run every command.
+      app: ${VALKEYWAY_APP_PASSWORD:}
+  tls:                          # TLS for clients
+    port: 0                     # TLS port, alongside proxy.port; 0 = off. Set proxy.port: 0 for TLS only.
+    cert-file: /etc/valkeyway/tls/server.crt  # PEM certificate chain (reloaded when it changes)
+    key-file: /etc/valkeyway/tls/server.key   # PEM private key, PKCS#8 ("BEGIN PRIVATE KEY")
+    key-password:               # If the key is encrypted
+    ca-file: /etc/valkeyway/tls/ca.crt        # CA for client certificates
+    client-certs: none          # none, optional or required (Valkey's tls-auth-clients)
+    protocols: TLSv1.2,TLSv1.3  # Default: the JDK's
+  backend:                      # How the proxy connects to the cluster
+    username: proxy             # Unset = default
+    password: ${VALKEY_PASSWORD:}  # Unset = no AUTH
+    tls:
+      enabled: false
+      ca-file:                  # CA to trust; unset = the system trust store
+      insecure: false           # Skip certificate verification
   clients:
     max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
     timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)
@@ -141,6 +167,10 @@ management:
     health:
       show-details: always
 ```
+
+For passwords, TLS and their environment variables, see [docs/SECURITY.md](docs/SECURITY.md).
+
+With TLS to the cluster, Glide checks each node's certificate against the address the cluster reports for it (usually an IP), so the certificates must name those addresses or `insecure` must be set. Glide can't present a client certificate, so the cluster must not require one (`tls-auth-clients no` or `optional`).
 
 Seed nodes can be IPs or DNS names. With `refresh-topology-from-seeds` (the default), Glide re-resolves and asks the seeds at each topology check, so re-pointing a DNS name at another cluster (a blue/green cutover) moves the proxy there at the next check. Glide refreshes slots at most once every 15–30 s, so a cutover can take that much longer. If the seeds can't be reached, the proxy keeps using the nodes it already knows.
 
@@ -246,11 +276,12 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - MULTI/EXEC/DISCARD (transactions, queued by the proxy; atomic within a slot)
 - WATCH/UNWATCH (on a dedicated backend client per connection)
 - INFO (proxy-specific response with role:master)
-- HELLO (standalone-mode response)
+- HELLO (standalone-mode response; HELLO ... AUTH and SETNAME)
 - CLUSTER (standalone errors for INFO/NODES; others proxied)
 - COMMAND (all subcommands proxied; DOCS format adjusted for redis-cli)
 - PING, ECHO, TIME, QUIT (answered by the proxy)
 - CLIENT (ID, INFO, LIST, KILL, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), RESET, AUTH, READONLY/READWRITE: answered by the proxy from its own connections. Forwarded, they would act on backend connections that every client shares.
+- AUTH and ACL WHOAMI use the proxy's own users (`proxy.auth.*`); other ACL subcommands go to a node.
 - PROXY: STATS, CLIENTINFO <id>, CONFIG GET <name|*>, CLUSTER INFO, HELP
 - Commands that administer a single node are refused by default (`proxy.node-admin-commands`), since through the proxy they reach whichever node Glide picks: SHUTDOWN, REPLICAOF/SLAVEOF, FAILOVER, DEBUG, SAVE, BGSAVE, BGREWRITEAOF, SYNC/PSYNC/REPLCONF, MODULE, CONFIG SET/REWRITE/RESETSTAT, ACL SETUSER/DELUSER/LOAD/SAVE, and the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, ...). Their read-only counterparts (CONFIG GET, ACL WHOAMI, CLUSTER KEYSLOT, ...) work.
 - Blocking commands (BLPOP, BRPOP, BLMOVE, BZPOPMIN, XREAD/XREADGROUP BLOCK, WAIT, ...) run on dedicated backend clients
@@ -266,6 +297,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 ## Design notes and upstream assumptions
 
+- [docs/SECURITY.md](docs/SECURITY.md): client passwords, TLS for clients and to the cluster, in practice.
 - [docs/RESP_LAYER.md](docs/RESP_LAYER.md): design of the client protocol layer, measurements, and findings about Glide.
 - [docs/UPSTREAM_ASSUMPTIONS.md](docs/UPSTREAM_ASSUMPTIONS.md): every detail of valkey-glide and Valkey that the proxy relies on but that isn't a stable API, such as Glide's error message formats, the Java types it returns, what it retries, and Valkey's reply formats. Each entry lists the code it affects (tagged `[upstream:ID]`) and the test that catches a change. Check it when upgrading either.
 
@@ -281,7 +313,9 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 ## Limitations
 
 - RESP2 only (HELLO 3 is answered with protocol 2).
-- No TLS and no client authentication: AUTH answers like a server without passwords. No credentials or TLS to the cluster either.
+- Proxy users have no ACL rules: every user can run every command. AUTH and HELLO are rejected inside MULTI.
+- TLS to the cluster can't use a client certificate (a Glide limitation).
+- Private keys must be PKCS#8 (`BEGIN PRIVATE KEY`); convert others with `openssl pkcs8 -topk8 -nocrypt`.
 - Pub/Sub subscriptions (SUBSCRIBE, PSUBSCRIBE, SSUBSCRIBE) and MONITOR are rejected. PUBLISH works.
 - CLIENT PAUSE, UNPAUSE, TRACKING (client-side caching), CACHING, GETREDIR, TRACKINGINFO and UNBLOCK are rejected. NO-EVICT and NO-TOUCH are accepted but only recorded. In CLIENT LIST, `cmd` is the last command's name, and buffer, memory and network fields are 0.
 - A transaction is atomic only when all its keys share a slot. A cross-slot transaction is rejected with CROSSSLOT by default; with `proxy.transactions.cross-slot=pipeline`, its commands run in order without any atomicity. With WATCH, a cross-slot transaction is always rejected.

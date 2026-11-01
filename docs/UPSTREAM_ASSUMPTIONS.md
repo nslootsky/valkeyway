@@ -146,6 +146,13 @@ The same goes for every other connection-scoped command, which the proxy therefo
 - **Code:** `ScanCommand`.
 - **Live test:** `ScanFidelityTest.glideCorruptsNonUtf8KeysInScan` pins the current behavior and fails once Glide fixes it.
 
+### G13: Glide's TLS to the cluster has no client certificate
+
+Glide 2.5.3 can connect over TLS (`useTLS`), with custom root certificates or without verification (`TlsAdvancedConfiguration`), and authenticate with a username and password (`ServerCredentials`), but it can't present a client certificate. A cluster with `tls-auth-clients yes`, Valkey's default once TLS is on, refuses the proxy; it needs `tls-auth-clients no` or `optional`. Glide checks the node's certificate against the address it connects to, which for every node but the seeds is the address in CLUSTER SLOTS, usually an IP. The certificates must name those addresses, or `proxy.backend.tls.insecure` must be set. Over TLS, a node reports the other nodes' TLS ports (`tls-cluster yes`), and Glide follows them.
+
+- **Code:** `BackendClients.buildConfig`.
+- **Live test:** `BackendTlsTest` (a TLS-only cluster that requires a password, with certificates for 127.0.0.1).
+
 ---
 
 ## Valkey
@@ -210,3 +217,16 @@ The proxy checks unknown commands and arity itself, from the COMMAND table, sinc
 
 - **Code:** `CommandKeyExtractor.queueError` and `notAllowedInTransaction`, `TransactionQueue`, `MultiCommand`, `WatchCommand`.
 - **Live test:** `TransactionFidelityTest` (proxy and a direct node compared byte for byte).
+
+### V7: Authentication replies and limits
+
+With `requirepass` set (or ACL users), Valkey 9 answers:
+- `NOAUTH Authentication required.` to any command but AUTH, HELLO, QUIT and RESET (the `no_auth` commands) before the client authenticates;
+- `WRONGPASS invalid username-password pair or user is disabled.` to a wrong password or an unknown user, after which the connection keeps its current user;
+- `NOAUTH HELLO must be called with the client already authenticated, otherwise the HELLO <proto> AUTH <user> <pass> option can be used to authenticate the client and select the RESP protocol version at the same time` to HELLO without AUTH;
+- `ERR Syntax error in HELLO option '<option>'`, `NOPROTO unsupported protocol version` and `ERR Protocol version is not an integer or out of range` for malformed HELLO.
+
+RESET switches back to the default user, so with a password the connection must authenticate again. Before a client authenticates, a request may have at most 10 arguments of at most 16 KB each, or Valkey answers `ERR Protocol error: unauthenticated multibulk length` (or `bulk length`) and closes the connection (`processMultibulkBuffer` in `networking.c`). Checked by hand against Valkey 9.1.1.
+
+- **Code:** `AuthCommand`, `HelloCommand`, `ResetCommand`, `CommandTable` (NOAUTH), `RespDecoder` (limits).
+- **Live test:** `ClientAuthTlsTest` (the replies, as Valkey gives them), `TlsAndAuthServerTest`.
