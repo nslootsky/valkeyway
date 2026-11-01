@@ -30,6 +30,6 @@ public class DiscardCommand implements RespCommand {
         }
         log.debug("DISCARD clearing transaction");
         SessionState.clearTransactionState(session);
-        return RedisToken.status("OK");
+        return RedisToken.responseOk();
     }
 }

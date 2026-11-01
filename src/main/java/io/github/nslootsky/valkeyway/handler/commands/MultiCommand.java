@@ -33,6 +33,6 @@ public class MultiCommand implements RespCommand {
         SessionState.clearTransactionCommands(session);
         SessionState.clearTransactionSlots(session);
         SessionState.clearTransactionError(session);
-        return RedisToken.status("OK");
+        return RedisToken.responseOk();
     }
 }

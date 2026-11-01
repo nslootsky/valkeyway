@@ -76,7 +76,7 @@ public class CatchAllCommand implements RespCommand {
         List<String> args = toArgs(request);
         if (args.size() >= 2 && args.get(1).equalsIgnoreCase("SETINFO")) {
             log.debug("CLIENT SETINFO handled locally");
-            return RedisToken.status("OK");
+            return RedisToken.responseOk();
         }
         if (args.size() >= 2 && args.get(1).equalsIgnoreCase("GETNAME")) {
             return RedisToken.nullString();

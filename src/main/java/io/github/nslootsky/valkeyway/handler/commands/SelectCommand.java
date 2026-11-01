@@ -43,7 +43,7 @@ public class SelectCommand implements RespCommand {
             if (db != currentDb) {
                 SessionState.setCurrentDb(session, db);
             }
-            return RedisToken.status("OK");
+            return RedisToken.responseOk();
         } catch (NumberFormatException e) {
             log.error("SELECT ERR {}", e.getMessage());
             return RedisToken.error("ERR value is not an integer or out of range");
