@@ -145,6 +145,12 @@ public final class ReplyEncoder extends MessageToByteEncoder<Object> {
                     }
                 }
             }
+            case Reply.Push(List<Reply> items) -> aggregate(out, resp3 ? '>' : '*', items.size(), items, resp3);
+            case Reply.Multi(List<Reply> replies) -> {
+                for (Reply r : replies) {
+                    write(r, out, resp3);
+                }
+            }
             case Reply.Null n -> out.writeBytes(resp3 ? NULL : n == Reply.Null.ARRAY ? NULL_ARRAY : NULL_BULK);
         }
     }

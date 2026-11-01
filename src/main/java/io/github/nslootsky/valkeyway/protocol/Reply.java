@@ -78,6 +78,12 @@ public sealed interface Reply {
     /** RESP3 {@code (}. RESP2: bulk string. */
     record BigNumber(String digits) implements Reply {}
 
+    /** RESP3 {@code >}: an out-of-band push (Pub/Sub messages and confirmations). RESP2: array. */
+    record Push(List<Reply> items) implements Reply {}
+
+    /** Several replies to one command, sent back to back (SUBSCRIBE a b confirms each channel). */
+    record Multi(List<Reply> replies) implements Reply {}
+
     /** The two RESP2 nulls; RESP3 has a single null ({@code _}) for both. */
     enum Null implements Reply {
         /** {@code $-1}: a missing value. */

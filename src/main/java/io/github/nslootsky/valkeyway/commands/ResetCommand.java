@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.pubsub.PubSubSession;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.Request;
@@ -16,7 +17,8 @@ import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 /**
  * RESET, applied to the proxy's view of the connection: leaves MULTI, drops watches, selects
  * database 0, clears the name and the CLIENT REPLY and NO-EVICT/NO-TOUCH settings, and switches to
- * the default user (unauthenticated, if that user has a password), and back to RESP2.
+ * the default user (unauthenticated, if that user has a password), back to RESP2, and drops all
+ * Pub/Sub subscriptions.
  *
  * <p>Forwarding it would reset a backend connection shared by every client: on a database-1
  * connection that switched everyone's reads and writes to database 0.
@@ -36,6 +38,11 @@ public class ResetCommand implements CommandHandler {
         return true;
     }
 
+    @Override
+    public boolean allowedWhileSubscribed() {
+        return true;
+    }
+
     /** Like Valkey, RESET runs immediately even inside MULTI, and ends it. */
     @Override
     public InTransaction inTransaction() {
@@ -52,6 +59,7 @@ public class ResetCommand implements CommandHandler {
             Transaction.end(connection);
         }
         watches.end(connection);
+        PubSubSession.end(connection);
         connection.db(0);
         connection.name(null);
         connection.noEvict(false);

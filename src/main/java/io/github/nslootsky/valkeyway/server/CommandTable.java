@@ -37,12 +37,16 @@ public final class CommandTable {
     /**
      * The handler for {@code name} on a connection that may be inside MULTI: commands that would be
      * queued go to the fallback handler (which queues them), and rejected ones to the rejecting handler.
-     * A connection that hasn't authenticated gets NOAUTH for everything not allowed before AUTH.
+     * A connection that hasn't authenticated gets NOAUTH for everything not allowed before AUTH, and a
+     * RESP2 connection with subscriptions the subscribed-mode error for everything not allowed then.
      */
-    public CommandHandler lookup(byte[] name, boolean inTransaction, boolean authenticated) {
+    public CommandHandler lookup(byte[] name, boolean inTransaction, boolean authenticated, boolean subscribedResp2) {
         CommandHandler handler = lookup(name);
         if (!authenticated && !handler.allowedBeforeAuth()) {
             return NOAUTH;
+        }
+        if (subscribedResp2 && !handler.allowedWhileSubscribed()) {
+            return SUBSCRIBED;
         }
         if (!inTransaction) {
             return handler;
@@ -56,6 +60,10 @@ public final class CommandTable {
 
     // [upstream:V7]
     private static final InlineCommandHandler NOAUTH = _ -> Reply.error("NOAUTH Authentication required.");
+
+    // [upstream:V8]
+    private static final InlineCommandHandler SUBSCRIBED = r -> Reply.error("ERR Can't execute '"
+            + lowercase(r.args()[0]) + "': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context");
 
     private CommandHandler rejectInTransaction;
     private CommandListener listener = CommandListener.NONE;

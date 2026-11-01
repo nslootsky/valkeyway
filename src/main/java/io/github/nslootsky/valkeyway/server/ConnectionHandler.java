@@ -60,7 +60,8 @@ final class ConnectionHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object event) {
-        if (event instanceof IdleStateEvent && connection != null && !connection.isBusy()) {
+        // Like Valkey's timeout, this doesn't apply to Pub/Sub subscribers, which may wait long for a message.
+        if (event instanceof IdleStateEvent && connection != null && !connection.isBusy() && !connection.subscribed()) {
             log.debug("Closing idle client {}", connection.id());
             ctx.close();
             return;
