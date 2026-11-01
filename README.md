@@ -63,29 +63,30 @@ valkey-cli GET mykey
 Clients (RESP2, no cluster support needed)
          │
          ▼
-┌──────────────────────────────────────────────┐
-│  ValkeyWay :6379                             │
-│                                              │
-│  Netty RESP server (epoll/NIO, 2 threads)    │
-│    RespDecoder / ReplyEncoder                │
-│    Connection: per-client state; replies in  │
-│      order; one backend unit in flight       │
-│    CommandTable                              │
-│      ├─ PING ECHO TIME QUIT HELLO INFO ...   │
-│      ├─ SELECT, MULTI/EXEC/DISCARD, SCAN     │
-│      ├─ blocking commands                    │
-│      │    → BlockingClientPool               │
-│      └─ everything else → CatchAllCommand    │
-│           pipeline → one ClusterBatch        │
-│           single commands → coalesced into   │
-│             batches across connections       │
-│    Resp2Shapes / GlideReplies / ServerErrors │
-│      (RESP2 reply shapes and error codes)    │
-│                                              │
-│  GlideClientCache: one GlideClusterClient    │
-│  per database (valkey-glide: slot routing,   │
-│  MOVED/ASK, multi-slot splitting, topology)  │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│  ValkeyWay :6379                               │
+│                                                │
+│  server: Netty RESP server (epoll/NIO)         │
+│    RespDecoder / ReplyEncoder                  │
+│    Connection: per-client state; replies in    │
+│      order; one backend unit in flight         │
+│    CommandTable → commands                     │
+│      ├─ PING ECHO TIME HELLO INFO SCAN ...     │
+│      ├─ MULTI/EXEC/WATCH → transaction         │
+│      ├─ blocking commands → blocking           │
+│      │    (dedicated clients)                  │
+│      └─ everything else → CatchAllCommand      │
+│                                                │
+│  backend: Backend (single commands,            │
+│    pipelines), Coalescer (batches across       │
+│    connections), BackendClients (one Glide     │
+│    client per database)                        │
+│    routing: slots, key specs, explicit routes  │
+│    replies: RESP2 shapes, error codes          │
+│                                                │
+│  valkey-glide: slot routing, MOVED/ASK,        │
+│    multi-slot splitting, topology              │
+└────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────┐ ┌──────────┐ ┌──────────┐

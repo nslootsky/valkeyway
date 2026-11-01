@@ -6,9 +6,9 @@
 package io.github.nslootsky.valkeyway.backend;
 
 import glide.api.GlideClusterClient;
-import io.github.nslootsky.valkeyway.cache.GlideClientCache;
+import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.reply.ServerErrors;
+import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
 import io.netty.channel.EventLoop;
 import io.netty.util.concurrent.FastThreadLocal;
 
@@ -31,7 +31,7 @@ import java.util.concurrent.CompletionStage;
  */
 public final class Coalescer {
 
-    private final GlideClientCache clients;
+    private final BackendClients clients;
     private final Backend backend;
     private final FastThreadLocal<PerLoop> perLoop = new FastThreadLocal<>() {
         @Override
@@ -40,7 +40,7 @@ public final class Coalescer {
         }
     };
 
-    public Coalescer(GlideClientCache clients, Backend backend) {
+    public Coalescer(BackendClients clients, Backend backend) {
         this.clients = clients;
         this.backend = backend;
     }

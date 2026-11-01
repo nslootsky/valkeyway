@@ -6,9 +6,9 @@
 package io.github.nslootsky.valkeyway.transaction;
 
 import glide.api.GlideClusterClient;
-import io.github.nslootsky.valkeyway.cache.GlideClientCache;
-import io.github.nslootsky.valkeyway.cluster.ClusterSlots;
-import io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor;
+import io.github.nslootsky.valkeyway.backend.BackendClients;
+import io.github.nslootsky.valkeyway.backend.routing.ClusterSlots;
+import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.Connection;
 
@@ -21,10 +21,10 @@ public final class TransactionQueue {
     /** EXEC's reply after a command was rejected while queueing. */
     public static final String EXECABORT = "EXECABORT Transaction discarded because of previous errors.";
 
-    private final GlideClientCache clients;
+    private final BackendClients clients;
     private final CommandKeyExtractor keys;
 
-    public TransactionQueue(GlideClientCache clients, CommandKeyExtractor keys) {
+    public TransactionQueue(BackendClients clients, CommandKeyExtractor keys) {
         this.clients = clients;
         this.keys = keys;
     }

@@ -8,7 +8,7 @@ package io.github.nslootsky.valkeyway.blocking;
 import glide.api.models.exceptions.RequestException;
 import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.reply.ServerErrors;
+import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

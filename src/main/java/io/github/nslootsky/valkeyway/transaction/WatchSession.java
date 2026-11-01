@@ -7,8 +7,8 @@ package io.github.nslootsky.valkeyway.transaction;
 
 import glide.api.GlideClusterClient;
 import glide.api.models.GlideString;
-import io.github.nslootsky.valkeyway.blocking.LeasePool;
-import io.github.nslootsky.valkeyway.cluster.ClusterSlots;
+import io.github.nslootsky.valkeyway.backend.LeasePool;
+import io.github.nslootsky.valkeyway.backend.routing.ClusterSlots;
 
 import java.util.HashSet;
 import java.util.Set;

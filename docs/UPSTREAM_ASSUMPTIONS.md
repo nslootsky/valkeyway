@@ -106,7 +106,7 @@ With binary output (`withBinaryOutput`, and `GlideString` arguments to `customCo
 - With `refreshTopologyFromInitialNodes`, every refresh re-resolves the configured seeds and asks them. If they can't be reached, Glide falls back to its existing connections (`calculate_topology_from_random_nodes`, `get_random_connections_from_initial_nodes`).
 - Slot refreshes are throttled to one per 15 s plus up to 15 s of jitter (`redis-rs/cluster_topology.rs`, `DEFAULT_SLOTS_REFRESH_WAIT_DURATION`, `DEFAULT_SLOTS_REFRESH_MAX_JITTER_MILLI`). This throttle can't be configured from Java.
 
-- **Code:** `GlideClientCache` (`buildConfig`), `ValkeywayProperties.Glide` (`refreshTopologyFromSeeds`, `topologyCheckSeconds`).
+- **Code:** `BackendClients` (`buildConfig`), `ValkeywayProperties.Glide` (`refreshTopologyFromSeeds`, `topologyCheckSeconds`).
 - **Live test:** `SeedDnsTest` (refresh from seeds, fallback), `TopologyChangeTest.trafficRecoversAfterAPrimaryStopsResponding` (hung primary; it would start recovering sooner if Glide fixes this).
 
 ### G9: Glide's default in-flight limit is 1000 requests per client
@@ -166,7 +166,7 @@ Everything else gets `$-1`. These come from the `addReplyNullArray` call sites.
 
 `<id> <ip:port@cport[,hostname]> <flags> <primary> <ping-sent> <pong-recv> <epoch> <link-state> <slots…>`. The flags we skip on are `fail`, `fail?`, `handshake` and `noaddr`. We use this to seed new clients from the live topology when the configured seeds can't be reached.
 
-- **Code:** `GlideClientCache.parseClusterNodes`.
+- **Code:** `BackendClients.parseClusterNodes`.
 - **Live test:** `SeedDnsTest.newClientsFallBackToKnownNodesWhenTheSeedsAreGone`.
 
 ### V4: COMMAND key specs and movable keys
