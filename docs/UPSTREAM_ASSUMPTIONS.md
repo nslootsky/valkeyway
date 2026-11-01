@@ -132,6 +132,13 @@ A `GlideClusterClient` sends all its requests for a node over one connection. Co
 - **Code:** `WatchClientPool`, `WatchSession`, `WatchCommand`, `ExecCommand`.
 - **Live test:** `WatchTest` (two and three clients interleaving WATCH, UNWATCH and EXEC).
 
+### G12: Glide's cluster scan isn't binary-safe
+
+`GlideClusterClient.scan` and `scanBinary` replace bytes that aren't valid UTF-8 with U+FFFD, both in the keys they return and in the MATCH pattern. (`CommandManager.submitClusterScanToJni` passes the pattern on as a Java `String`, `options.getMatchPattern().toString()`, even when it was given as a binary `GlideString`, and the keys come back decoded the same way.) A key `\xffkey` comes back from SCAN as `\xef\xbf\xbdkey`, and a pattern with such bytes matches nothing. Other commands are binary-safe. Fixing it on our side would mean implementing cluster-wide SCAN ourselves, node by node, and losing Glide's handling of slots that move during a scan, so this is documented instead. Worth reporting upstream.
+
+- **Code:** `ScanCommand`.
+- **Live test:** `ScanFidelityTest.glideCorruptsNonUtf8KeysInScan` pins the current behavior and fails once Glide fixes it.
+
 ---
 
 ## Valkey

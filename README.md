@@ -288,5 +288,6 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - A primary that hangs without closing its connections isn't routed around until it answers again (see [Cluster changes](#cluster-changes)).
 - CLIENT commands (CLIENT LIST, CLIENT KILL, ...) go to a backend node and describe the proxy's backend connections, not the proxy's clients.
 - PROXY STATS and PROXY CLIENTINFO return placeholder values.
-- SCAN cursors are UUIDs rather than numbers; `0` still marks the end.
+- SCAN cursors are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one) and only in the database it started in.
+- SCAN returns keys whose bytes aren't valid UTF-8 with those bytes replaced, and MATCH patterns with such bytes match nothing (a Glide limitation). Other commands are binary-safe.
 - Set replies (SMEMBERS, SINTER, ...) contain the right members, but not necessarily in the server's iteration order.
