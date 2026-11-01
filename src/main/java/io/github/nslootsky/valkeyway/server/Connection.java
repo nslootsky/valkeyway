@@ -95,6 +95,7 @@ public final class Connection {
     private Set<Integer> transactionSlots = new HashSet<>();
     private String transactionError;
     private String scanCursorId;
+    private volatile AutoCloseable watchSession;
 
     Connection(long id, Channel channel, CommandTable commands, Executor executor) {
         this.id = id;
@@ -129,7 +130,7 @@ public final class Connection {
                     break;
                 }
                 Request request = new Request(this, command);
-                CommandHandler handler = commands.lookup(command[0]);
+                CommandHandler handler = commands.lookup(command[0], inTransaction);
                 if (handler instanceof InlineCommandHandler) {
                     waiting.poll();
                     addInline(handler, request);
@@ -173,7 +174,7 @@ public final class Connection {
         byte[][] next;
         while (slots.size() < MAX_IN_FLIGHT && (next = waiting.peek()) != null) {
             Request request = new Request(this, next);
-            CommandHandler h = commands.lookup(next[0]);
+            CommandHandler h = commands.lookup(next[0], inTransaction);
             if (h == handler && handler.canRunAsync(request)) {
                 waiting.poll();
                 Slot slot = new Slot();
@@ -341,6 +342,15 @@ public final class Connection {
     void markClosed() {
         closed = true;
         waiting.clear();
+        AutoCloseable watch = watchSession;
+        watchSession = null;
+        if (watch != null) {
+            try {
+                watch.close();
+            } catch (Exception e) {
+                log.warn("Failed to release the watch of a closed connection", e);
+            }
+        }
     }
 
     /** Close the connection once the current command's reply has been sent (QUIT). */
@@ -410,6 +420,20 @@ public final class Connection {
         transactionCommands = new ArrayList<>();
         transactionSlots = new HashSet<>();
         transactionError = null;
+    }
+
+    /** Whether the client has disconnected (or is being disconnected). */
+    public boolean isClosed() {
+        return closed;
+    }
+
+    /** The connection's watched keys on a dedicated backend client, or {@code null}. Closed on disconnect. */
+    public AutoCloseable watchSession() {
+        return watchSession;
+    }
+
+    public void watchSession(AutoCloseable watchSession) {
+        this.watchSession = watchSession;
     }
 
     public String scanCursorId() {

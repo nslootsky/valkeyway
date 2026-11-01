@@ -87,8 +87,8 @@ class BinaryOperationsTest extends IntegrationTestBase {
     void binaryTransaction() throws Exception {
         byte[] data1 = new byte[]{0x01, 0x02, (byte) 0xFF};
         byte[] data2 = new byte[]{(byte) 0xAA, (byte) 0xBB, (byte) 0xCC};
-        GlideString key1 = GlideString.of("tx_bin_key1");
-        GlideString key2 = GlideString.of("tx_bin_key2");
+        GlideString key1 = GlideString.of("{txbin}key1");
+        GlideString key2 = GlideString.of("{txbin}key2");
 
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             GlideClient glide = client.getClient();

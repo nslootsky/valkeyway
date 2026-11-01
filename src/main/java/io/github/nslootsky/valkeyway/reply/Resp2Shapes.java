@@ -39,7 +39,7 @@ public final class Resp2Shapes {
         if (value == null) {
             return nullReply(args);
         }
-        if (value instanceof GlideString status && isStatusCommand(args[0])) {
+        if (value instanceof GlideString status && (isStatusCommand(args[0]) || isBarePing(args))) {
             return new Reply.Simple(status.getString());
         }
         // Every command reshaped below has a name of 5+ chars starting with x, z, h, g or b, so the
@@ -82,6 +82,13 @@ public final class Resp2Shapes {
     // [upstream:G7]
     private static final java.util.Set<String> STATUS_COMMANDS = java.util.Set.of(
             "type", "bgsave", "bgrewriteaof", "migrate");
+
+    /** PING without an argument answers +PONG (with one, it echoes a bulk string). Reaches Glide only inside EXEC. */
+    private static boolean isBarePing(byte[][] args) {
+        byte[] name = args[0];
+        return args.length == 1 && name.length == 4 && (name[0] | 0x20) == 'p' && (name[1] | 0x20) == 'i'
+                && (name[2] | 0x20) == 'n' && (name[3] | 0x20) == 'g';
+    }
 
     private static boolean isStatusCommand(byte[] name) {
         switch (name[0] | 0x20) {

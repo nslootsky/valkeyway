@@ -89,7 +89,7 @@ Glide talks RESP3 to the cluster and converts some replies according to the comm
 With binary output (`withBinaryOutput`, and `GlideString` arguments to `customCommand`):
 
 - **`OK`, `PONG` and `QUEUED`** arrive as `String`.
-- **Other status replies** (TYPE, BGSAVE, BGREWRITEAOF, MIGRATE, ...) arrive as `GlideString`, which looks exactly like a bulk string, so we list those commands.
+- **Other status replies** (TYPE, BGSAVE, BGREWRITEAOF, MIGRATE, and PING inside EXEC) arrive as `GlideString`, which looks exactly like a bulk string, so we list those commands.
 - **RESP3 verbatim strings** (CLIENT LIST, CLUSTER INFO, INFO, ...) arrive as `String` and contain line breaks, which is how we tell them from statuses.
 - **Strings nested inside a reply** were bulk strings on the wire.
 - **Both RESP2 nulls** (`$-1` and `*-1`) arrive as Java `null` (see V2).
@@ -124,6 +124,13 @@ The node rejected the command without running it, so a single command that comes
 
 - **Code:** `ServerErrors.isUnfollowedRedirect`, `CatchAllCommand.send` and `sendAsBatch`.
 - **Live test:** `TopologyChangeTest.askRedirectsDuringAMigrationAreFollowed` (3,000 GETs during a migration). Re-check with `proxy.glide.coalesce-requests=false`, which sends every command alone.
+
+### G11: One Glide client multiplexes one connection per node
+
+A `GlideClusterClient` sends all its requests for a node over one connection. Connection-scoped server state is therefore shared by everyone using the client. For WATCH, that means one proxy client's EXEC or UNWATCH would drop another's watches, and one client's watched key would abort another's transaction. Connections that use WATCH lease their own client until EXEC, DISCARD, UNWATCH or disconnect. An atomic `ClusterBatch` on that client runs MULTI/EXEC over the same connection as the WATCH (for keys in the same slot). Blocking commands lease clients for the same reason (V5).
+
+- **Code:** `WatchClientPool`, `WatchSession`, `WatchCommand`, `ExecCommand`.
+- **Live test:** `WatchTest` (two and three clients interleaving WATCH, UNWATCH and EXEC).
 
 ---
 
@@ -175,3 +182,17 @@ A command that can block holds its connection on the server, so it must not run 
 
 - **Code:** `BlockingCommands`.
 - **Live test:** `BlockingCommandsTest` (integration).
+
+### V6: Queue-time errors inside MULTI
+
+Valkey answers a command queued in MULTI that can't run, and the transaction is then discarded: EXEC answers `EXECABORT Transaction discarded because of previous errors.` The errors come from `processCommand` in `server.c`:
+
+- `ERR unknown command '<name>', with args beginning with: '<arg>' '<arg>' `: arguments quoted until the list reaches 128 characters, with a trailing space.
+- `ERR unknown subcommand '<sub>'. Try <NAME> HELP.`
+- `ERR wrong number of arguments for '<name>' command`: the full name, e.g. `config|get`, checked against the COMMAND table's arity.
+- `ERR Command '<name>' not allowed inside a transaction`: for commands flagged `no_multi` in the COMMAND table (MULTI, WATCH, SUBSCRIBE, ...). This is Valkey 9's wording; older servers answered `ERR MULTI calls can not be nested` and `ERR WATCH inside MULTI is not allowed`, and didn't discard the transaction.
+
+The proxy checks unknown commands and arity itself, from the COMMAND table, since it queues transactions rather than sending MULTI ahead.
+
+- **Code:** `CommandKeyExtractor.queueError` and `notAllowedInTransaction`, `CatchAllCommand.queueTransactionCommand`, `MultiCommand`, `WatchCommand`.
+- **Live test:** `TransactionFidelityTest` (proxy and a direct node compared byte for byte).

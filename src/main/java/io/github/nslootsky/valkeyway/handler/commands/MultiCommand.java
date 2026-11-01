@@ -16,10 +16,17 @@ import io.github.nslootsky.valkeyway.server.Request;
 public class MultiCommand implements CommandHandler {
 
     @Override
+    public InTransaction inTransaction() {
+        return InTransaction.RUN;
+    }
+
+    @Override
     public Reply execute(Request request) {
         Connection connection = request.connection();
         if (connection.inTransaction()) {
-            return Reply.error("ERR MULTI calls can not be nested");
+            // Like Valkey 9, this also discards the transaction (EXEC answers EXECABORT).
+            connection.transactionError(CatchAllCommand.EXECABORT);
+            return Reply.error(io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor.notAllowedInTransaction("multi"));
         }
         connection.clearTransaction();
         connection.inTransaction(true);

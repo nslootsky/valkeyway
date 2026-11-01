@@ -161,6 +161,7 @@ Each phase ends green on the full suite and with a benchmark run.
 2. **Inline commands:** supported, with Valkey-style quote handling.
 3. **Same-slot reordering during resharding:** accepted and documented (same as cluster-aware clients such as Lettuce and Jedis). Phase 2 tests whether Glide actually reorders.
 4. **`PROXY` commands:** make them real. STATS and CLIENTINFO come from the connection registry; CONFIG only covers settings that take effect; FLUSHCLIENTS is removed. The registry also lets the proxy answer `CLIENT LIST` / `CLIENT KILL` with real clients.
+5. **Cross-slot transactions (2026-11-01):** configurable with `proxy.transactions.cross-slot`. `reject` (default) answers CROSSSLOT at EXEC, as a cluster node does; `pipeline` runs the commands in order without atomicity. With WATCH they're always rejected.
 
 ## Topology changes (2026-11-01)
 

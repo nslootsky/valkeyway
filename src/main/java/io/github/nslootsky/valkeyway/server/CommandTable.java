@@ -32,6 +32,30 @@ public final class CommandTable {
         return handler != null ? handler : fallback;
     }
 
+    /**
+     * The handler for {@code name} on a connection that may be inside MULTI: commands that would be
+     * queued go to the fallback handler (which queues them), and rejected ones to the rejecting handler.
+     */
+    public CommandHandler lookup(byte[] name, boolean inTransaction) {
+        CommandHandler handler = lookup(name);
+        if (!inTransaction) {
+            return handler;
+        }
+        return switch (handler.inTransaction()) {
+            case RUN -> handler;
+            case QUEUE -> fallback;
+            case REJECT -> rejectInTransaction != null ? rejectInTransaction : fallback;
+        };
+    }
+
+    private CommandHandler rejectInTransaction;
+
+    /** Answers commands whose handler declares {@link CommandHandler.InTransaction#REJECT} inside MULTI. */
+    public CommandTable rejectInTransaction(CommandHandler handler) {
+        this.rejectInTransaction = handler;
+        return this;
+    }
+
     private static String lowercase(byte[] name) {
         byte[] lower = new byte[name.length];
         for (int i = 0; i < name.length; i++) {

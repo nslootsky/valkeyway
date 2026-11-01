@@ -15,6 +15,11 @@ import io.github.nslootsky.valkeyway.server.Request;
  */
 public class InfoCommand implements InlineCommandHandler {
 
+    @Override
+    public InTransaction inTransaction() {
+        return InTransaction.REJECT;
+    }
+
     private final MetricsCollector metrics;
 
     public InfoCommand(MetricsCollector metrics) {

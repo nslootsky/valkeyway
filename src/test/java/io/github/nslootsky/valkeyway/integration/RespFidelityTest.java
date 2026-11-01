@@ -83,11 +83,13 @@ class RespFidelityTest extends IntegrationTestBase {
     @Test
     void crossSlotMsetInsideTransactionIsDetected() throws Exception {
         try (RawRespClient c = connect()) {
+            c.call("DEL", "fid:k1", "fid:k2", "fid:k3");
             c.call("MULTI");
             c.call("MSET", "fid:k1", "1", "fid:k2", "2", "fid:k3", "3");
 
-            assertEquals(List.of(new Status("OK")), c.call("EXEC"));
-            assertEquals(List.of("1", "2", "3"), c.call("MGET", "fid:k1", "fid:k2", "fid:k3"));
+            // A cluster can't run it atomically; by default it's rejected, as a cluster node does.
+            assertError("CROSSSLOT ", c.call("EXEC"));
+            assertEquals(java.util.Arrays.asList(null, null, null), c.call("MGET", "fid:k1", "fid:k2", "fid:k3"));
         }
     }
 

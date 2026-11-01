@@ -15,4 +15,18 @@ import io.github.nslootsky.valkeyway.protocol.Reply;
 public interface CommandHandler {
 
     Reply execute(Request request) throws Exception;
+
+    /** What happens to this handler's commands between MULTI and EXEC. */
+    enum InTransaction {
+        /** The handler runs and deals with the transaction itself (MULTI, EXEC, WATCH, ...). */
+        RUN,
+        /** Queued for the backend, like any key command (PING, ECHO, TIME, ...). */
+        QUEUE,
+        /** Answered from proxy state that can't be reproduced inside a transaction; rejected. */
+        REJECT
+    }
+
+    default InTransaction inTransaction() {
+        return InTransaction.QUEUE;
+    }
 }

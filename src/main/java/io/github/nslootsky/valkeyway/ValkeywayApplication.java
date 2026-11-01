@@ -39,13 +39,13 @@ public class ValkeywayApplication {
 
     @Bean(destroyMethod = "close")
     RespServer respServer(ValkeywayProperties props, GlideClientCache glideClientCache, ScanCursorStore scanCursorStore,
-                          MetricsCollector metrics, BlockingClientPool blockingPool) throws InterruptedException {
+                          MetricsCollector metrics, BlockingClientPool blockingPool,
+                          io.github.nslootsky.valkeyway.transaction.WatchClientPool watchPool) throws InterruptedException {
         ValkeywayProperties.Clients clients = props.clients();
         RespServer server = new RespServer(
                 new RespServer.Settings(props.host(), props.port(), clients.ioThreads(), clients.maxClients(),
                         clients.timeoutSeconds()),
-                ValkeywayCommands.create(glideClientCache, scanCursorStore, metrics, blockingPool,
-                        props.glide().coalesceRequests()));
+                ValkeywayCommands.create(glideClientCache, scanCursorStore, metrics, blockingPool, watchPool, props));
         server.start();
         log.info("Proxy ready");
         return server;

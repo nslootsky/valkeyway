@@ -5,6 +5,11 @@
 
 package io.github.nslootsky.valkeyway.handler;
 
+import io.github.nslootsky.valkeyway.ValkeywayProperties;
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.transaction.WatchClientPool;
+import io.github.nslootsky.valkeyway.transaction.WatchSessions;
+
 import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.commands.*;
@@ -22,18 +27,29 @@ public final class ValkeywayCommands {
 
     public static CommandTable create(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore,
                                       MetricsCollector metrics, BlockingClientPool blockingPool,
-                                      boolean coalesceRequests) {
+                                      WatchClientPool watchPool, ValkeywayProperties props) {
+        boolean coalesceRequests = props.glide().coalesceRequests();
+        WatchSessions watches = new WatchSessions(watchPool);
         CatchAllCommand catchAll = new CatchAllCommand(glideClientCache, metrics, blockingPool, coalesceRequests);
         catchAll.warmUp();
         return new CommandTable(catchAll)
+                .rejectInTransaction(request -> {
+                    // Answered from proxy state (INFO, HELLO, SCAN, CLUSTER, PROXY), which a node
+                    // can't reproduce inside EXEC. Like any queue-time error, this discards the transaction.
+                    request.connection().transactionError(CatchAllCommand.EXECABORT);
+                    return Reply.error("ERR Command '" + request.command().toLowerCase(java.util.Locale.ROOT)
+                            + "' is not supported inside a transaction by this proxy");
+                })
                 .register("ping", new PingCommand())
                 .register("echo", new EchoCommand())
                 .register("time", new TimeCommand())
                 .register("quit", new QuitCommand())
-                .register("select", new SelectCommand())
+                .register("select", new SelectCommand(watches))
                 .register("multi", new MultiCommand())
-                .register("exec", new ExecCommand(glideClientCache))
-                .register("discard", new DiscardCommand())
+                .register("exec", new ExecCommand(glideClientCache, watches, props.transactions().crossSlot()))
+                .register("discard", new DiscardCommand(watches))
+                .register("watch", new WatchCommand(watches))
+                .register("unwatch", new WatchCommand(watches))
                 .register("scan", new ScanCommand(glideClientCache, scanCursorStore))
                 .register("proxy", new ValkeywayAdminCommand(glideClientCache))
                 .register("hello", new HelloCommand())

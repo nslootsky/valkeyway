@@ -21,15 +21,15 @@ class TransactionTest extends IntegrationTestBase {
     void multiExec() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             assertEquals("OK", client.multi());
-            assertEquals("QUEUED", client.set("tx_key1", "val1"));
-            assertEquals("QUEUED", client.set("tx_key2", "val2"));
+            assertEquals("QUEUED", client.set("{tx}key1", "val1"));
+            assertEquals("QUEUED", client.set("{tx}key2", "val2"));
             Object[] result = client.exec();
             assertNotNull(result);
             assertEquals(2, result.length);
             assertEquals("OK", result[0]);
             assertEquals("OK", result[1]);
-            assertEquals("val1", client.get("tx_key1"));
-            assertEquals("val2", client.get("tx_key2"));
+            assertEquals("val1", client.get("{tx}key1"));
+            assertEquals("val2", client.get("{tx}key2"));
         }
     }
 
@@ -49,9 +49,9 @@ class TransactionTest extends IntegrationTestBase {
     void glideBatchTransaction() throws Exception {
         try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
             Batch batch = new Batch(true);
-            batch.set("batch_key1", "batch_val1");
-            batch.set("batch_key2", "batch_val2");
-            batch.get("batch_key1");
+            batch.set("{batch}key1", "batch_val1");
+            batch.set("{batch}key2", "batch_val2");
+            batch.get("{batch}key1");
             Object[] result = client.getClient().exec(batch, true).get(5, java.util.concurrent.TimeUnit.SECONDS);
             assertNotNull(result);
             assertEquals(3, result.length);
@@ -75,6 +75,36 @@ class TransactionTest extends IntegrationTestBase {
             assertEquals("OK", result[0]);
             assertEquals("OK", result[1]);
             assertEquals("pipe_val1", result[2]);
+        }
+    }
+
+    /** A standalone client's atomic batch (MULTI/EXEC) across slots: rejected, as a cluster node would. */
+    @Test
+    @Order(5)
+    void glideAtomicBatchAcrossSlotsIsRejected() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            Batch batch = new Batch(true);
+            batch.set("txa:one", "1");
+            batch.set("txa:two", "2");
+            java.util.concurrent.ExecutionException e = assertThrows(java.util.concurrent.ExecutionException.class,
+                    () -> client.getClient().exec(batch, true).get(5, java.util.concurrent.TimeUnit.SECONDS));
+            // Glide's client reports the proxy's CROSSSLOT error as "CrossSlot: ...".
+            assertTrue(e.getCause().getMessage().toUpperCase().contains("CROSSSLOT"), e.getCause().getMessage());
+            assertNull(client.get("txa:one"));
+        }
+    }
+
+    /** A Glide atomic batch with a command the proxy normally answers itself still lines up with its results. */
+    @Test
+    @Order(6)
+    void glideAtomicBatchWithPing() throws Exception {
+        try (GlideTestClient client = new GlideTestClient("127.0.0.1", RESP_PORT)) {
+            Batch batch = new Batch(true);
+            batch.set("{txp}a", "1");
+            batch.ping();
+            batch.get("{txp}a");
+            Object[] result = client.getClient().exec(batch, true).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertArrayEquals(new Object[]{"OK", "PONG", "1"}, result);
         }
     }
 }
