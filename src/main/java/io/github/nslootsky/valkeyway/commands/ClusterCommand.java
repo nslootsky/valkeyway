@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.commands;
 import java.util.Locale;
 import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
+import io.github.nslootsky.valkeyway.backend.routing.NodeAdminCommands;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
@@ -30,10 +31,12 @@ public class ClusterCommand implements CommandHandler {
 
     private final BackendClients clients;
     private final Backend backend;
+    private final NodeAdminCommands nodeAdmin;
 
-    public ClusterCommand(BackendClients clients, Backend backend) {
+    public ClusterCommand(BackendClients clients, Backend backend, NodeAdminCommands nodeAdmin) {
         this.clients = clients;
         this.backend = backend;
+        this.nodeAdmin = nodeAdmin;
     }
 
     @Override
@@ -43,6 +46,10 @@ public class ClusterCommand implements CommandHandler {
         }
         if (STANDALONE_ERROR_SUBCOMMANDS.contains(request.argString(0).toUpperCase(Locale.ROOT))) {
             return Reply.error("ERR This instance has cluster support disabled");
+        }
+        String refused = nodeAdmin.check(request.args());
+        if (refused != null) {
+            return Reply.error(refused);
         }
         return backend.callAndWait(clients.getClient(request.connection().db()), request.args());
     }

@@ -54,6 +54,12 @@ public class RawRespClient implements AutoCloseable {
         return read();
     }
 
+    /** Sends a command without reading a reply (for CLIENT REPLY OFF and the like). */
+    public void send(String... args) throws IOException {
+        out.write(encode(args));
+        out.flush();
+    }
+
     /** Sends all commands at once, then reads one reply per command. */
     public List<Object> pipeline(List<String[]> commands) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();

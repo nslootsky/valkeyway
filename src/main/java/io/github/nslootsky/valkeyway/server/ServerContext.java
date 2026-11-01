@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * State shared by all connections: the command table, the executor commands run on, and the
  * registry of connected clients (for client IDs, the client limit and, later, CLIENT LIST).
  */
-final class ServerContext {
+final class ServerContext implements ClientRegistry {
 
     private final CommandTable commands;
     private final Executor executor;
@@ -37,7 +37,7 @@ final class ServerContext {
         if (clients.size() >= maxClients) {
             return null;
         }
-        Connection connection = new Connection(nextId.getAndIncrement(), channel, commands, executor);
+        Connection connection = new Connection(nextId.getAndIncrement(), channel, commands, executor, this);
         clients.put(connection.id(), connection);
         return connection;
     }
@@ -46,7 +46,18 @@ final class ServerContext {
         clients.remove(connection.id());
     }
 
-    Collection<Connection> clients() {
+    @Override
+    public Collection<Connection> clients() {
         return Collections.unmodifiableCollection(clients.values());
+    }
+
+    @Override
+    public Connection find(long id) {
+        return clients.get(id);
+    }
+
+    @Override
+    public int maxClients() {
+        return maxClients;
     }
 }

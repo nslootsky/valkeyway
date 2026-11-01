@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.transaction;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import glide.api.GlideClusterClient;
 import glide.api.models.GlideString;
@@ -28,6 +29,7 @@ public final class WatchSession implements AutoCloseable {
     private final int db;
     private final Set<Integer> slots = new HashSet<>();
     private byte[] firstKey;
+    private final AtomicInteger keyCount = new AtomicInteger();
     private volatile boolean broken;
     private final AtomicBoolean released = new AtomicBoolean();
 
@@ -54,7 +56,13 @@ public final class WatchSession implements AutoCloseable {
         return firstKey;
     }
 
+    /** How many keys the connection has watched (WATCH calls add up), for CLIENT LIST. */
+    public int keyCount() {
+        return keyCount.get();
+    }
+
     void watched(byte[][] keys) {
+        keyCount.addAndGet(keys.length);
         for (byte[] key : keys) {
             slots.add(ClusterSlots.slot(key));
             if (firstKey == null) {

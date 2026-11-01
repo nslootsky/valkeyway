@@ -129,8 +129,15 @@ The node rejected the command without running it, so a single command that comes
 
 A `GlideClusterClient` sends all its requests for a node over one connection. Connection-scoped server state is therefore shared by everyone using the client. For WATCH, that means one proxy client's EXEC or UNWATCH would drop another's watches, and one client's watched key would abort another's transaction. Connections that use WATCH lease their own client until EXEC, DISCARD, UNWATCH or disconnect. An atomic `ClusterBatch` on that client runs MULTI/EXEC over the same connection as the WATCH (for keys in the same slot). Blocking commands lease clients for the same reason (V5).
 
-- **Code:** `WatchClientPool`, `WatchSession`, `WatchCommand`, `ExecCommand`.
-- **Live test:** `WatchTest` (two and three clients interleaving WATCH, UNWATCH and EXEC).
+The same goes for every other connection-scoped command, which the proxy therefore answers itself and never forwards. Measured on the shared connections before that change:
+- `CLIENT REPLY OFF` made one node's keys unreachable for every client;
+- `RESET` on a database-1 connection switched every database-1 client to database 0;
+- `MONITOR` desynchronized a connection;
+- `CLIENT PAUSE` stalled a node, and `CLIENT KILL` killed other applications' connections;
+- `AUTH` would switch the shared connection's user.
+
+- **Code:** `WatchClientPool`, `WatchSession`, `WatchCommand`, `ExecCommand`, `ClientCommand`, `ResetCommand`, `AuthCommand`, `LocalCommand`.
+- **Live test:** `WatchTest` (two and three clients interleaving WATCH, UNWATCH and EXEC), `ConnectionCommandsTest` (other clients' reads in both databases after each connection-scoped command).
 
 ### G12: Glide's cluster scan isn't binary-safe
 

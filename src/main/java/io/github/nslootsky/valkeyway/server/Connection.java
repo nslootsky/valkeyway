@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.server;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.CompletionException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.netty.buffer.Unpooled;
@@ -80,6 +81,18 @@ public final class Connection {
     private final CommandTable commands;
     private final Executor executor;
     private final CommandListener listener;
+    private final ClientRegistry registry;
+    private final long createdNanos = System.nanoTime();
+    private volatile long lastCommandNanos = createdNanos;
+    private volatile byte[] lastCommand;
+    private final AtomicLong totalCommands = new AtomicLong();
+    private volatile ReplyMode replyMode = ReplyMode.ON;
+    /** Replies still to drop for CLIENT REPLY SKIP (its own and the next command's). Event loop only. */
+    private int skipReplies;
+    private volatile String libName = "";
+    private volatile String libVersion = "";
+    private volatile boolean noEvict;
+    private volatile boolean noTouch;
 
     // Event loop only.
     private final ArrayDeque<byte[][]> waiting = new ArrayDeque<>();
@@ -101,8 +114,9 @@ public final class Connection {
     /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
     private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
 
-    Connection(long id, Channel channel, CommandTable commands, Executor executor) {
+    Connection(long id, Channel channel, CommandTable commands, Executor executor, ClientRegistry registry) {
         this.id = id;
+        this.registry = registry;
         this.channel = channel;
         this.loop = channel.eventLoop();
         this.commands = commands;
@@ -118,6 +132,9 @@ public final class Connection {
             return;
         }
         waiting.add(command);
+        lastCommandNanos = System.nanoTime();
+        lastCommand = command[0];
+        totalCommands.incrementAndGet();
         pump();
         updateReading();
     }
@@ -276,8 +293,10 @@ public final class Connection {
         Slot head;
         while (!closed && (head = slots.peek()) != null && head.done) {
             slots.poll();
-            channel.write(head.reply);
-            wrote = true;
+            if (sendReply()) {
+                channel.write(head.reply);
+                wrote = true;
+            }
             if (head.closeAfter) {
                 closed = true;
                 waiting.clear();
@@ -359,6 +378,94 @@ public final class Connection {
                 }
             }
         }
+    }
+
+    /** Whether to send the next reply, per CLIENT REPLY. Event loop only. */
+    private boolean sendReply() {
+        if (skipReplies > 0) {
+            skipReplies--;
+            return false;
+        }
+        return replyMode == ReplyMode.ON;
+    }
+
+    /** CLIENT REPLY modes. */
+    public enum ReplyMode { ON, OFF, SKIP }
+
+    /**
+     * CLIENT REPLY, called while that command runs: OFF drops every reply from here on, its own
+     * included; SKIP drops its own reply and the next command's; ON sends replies again.
+     */
+    public void replyMode(ReplyMode mode) {
+        onLoop(() -> {
+            if (mode == ReplyMode.SKIP) {
+                skipReplies = 2;
+                replyMode = ReplyMode.ON;
+            } else {
+                skipReplies = 0;
+                replyMode = mode;
+            }
+        });
+    }
+
+    /** Closes the connection now (CLIENT KILL). Safe from any thread. */
+    public void kill() {
+        channel.close();
+    }
+
+    public ClientRegistry registry() {
+        return registry;
+    }
+
+    /** Milliseconds since the connection was accepted. */
+    public long ageMillis() {
+        return (System.nanoTime() - createdNanos) / 1_000_000;
+    }
+
+    /** Milliseconds since the client last sent a command. */
+    public long idleMillis() {
+        return (System.nanoTime() - lastCommandNanos) / 1_000_000;
+    }
+
+    /** The name of the last command the client sent, or {@code null}. */
+    public byte[] lastCommand() {
+        return lastCommand;
+    }
+
+    public long totalCommands() {
+        return totalCommands.get();
+    }
+
+    public String libName() {
+        return libName;
+    }
+
+    public void libName(String libName) {
+        this.libName = libName;
+    }
+
+    public String libVersion() {
+        return libVersion;
+    }
+
+    public void libVersion(String libVersion) {
+        this.libVersion = libVersion;
+    }
+
+    public boolean noEvict() {
+        return noEvict;
+    }
+
+    public void noEvict(boolean noEvict) {
+        this.noEvict = noEvict;
+    }
+
+    public boolean noTouch() {
+        return noTouch;
+    }
+
+    public void noTouch(boolean noTouch) {
+        this.noTouch = noTouch;
     }
 
     /** Close the connection once the current command's reply has been sent (QUIT). */
