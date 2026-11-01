@@ -54,7 +54,7 @@ A raw MOVED would mislead clients of a standalone server (Jedis turns it into `J
 
 ### G3: Inside a batch, Glide retries redirects but not other server errors
 
-For a single command, Glide retries TRYAGAIN, CLUSTERDOWN, MASTERDOWN and LOADING (waiting between attempts), refreshes slots and retries on READONLY, and follows MOVED/ASK. Inside a non-atomic `ClusterBatch`, it follows MOVED/ASK "regardless", but returns the other errors unless the batch's `retry_server_error` is set (`redis-rs/cluster_async/pipeline_routing.rs`, `update_retry_map`). READONLY can't be retried in a batch at all (the TODO references valkey-glide #5226). Glide's request timeout bounds all retries of a request (`proxy.connect-timeout-ms`, despite its name).
+For a single command, Glide retries TRYAGAIN, CLUSTERDOWN, MASTERDOWN and LOADING (waiting between attempts), refreshes slots and retries on READONLY, and follows MOVED/ASK. Inside a non-atomic `ClusterBatch`, it follows MOVED/ASK "regardless", but returns the other errors unless the batch's `retry_server_error` is set (`redis-rs/cluster_async/pipeline_routing.rs`, `update_retry_map`). READONLY can't be retried in a batch at all (the TODO references valkey-glide #5226). Glide's request timeout bounds all retries of a request (`proxy.request-timeout-ms`).
 
 We rely on this twice:
 - **Coalesced batches:** commands from a coalesced batch that come back with one of these codes, or with a G2 "did not run" error, are resent alone.
