@@ -25,6 +25,11 @@ public class QuitCommand implements CommandHandler {
     }
 
     @Override
+    public boolean allowedWhileSubscribed() {
+        return true;
+    }
+
+    @Override
     public Reply execute(Request request) {
         request.connection().closeAfterReply();
         return Reply.OK;

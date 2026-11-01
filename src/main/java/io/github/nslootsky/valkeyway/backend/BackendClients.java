@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.backend;
 import glide.api.GlideClusterClient;
 import glide.api.models.GlideString;
 import glide.api.models.configuration.AdvancedGlideClusterClientConfiguration;
+import glide.api.models.configuration.ClusterSubscriptionConfiguration;
 import glide.api.models.configuration.GlideClusterClientConfiguration;
 import glide.api.models.configuration.NodeAddress;
 import glide.api.models.configuration.PeriodicChecksManualInterval;
@@ -82,8 +83,23 @@ public class BackendClients {
     }
 
     // [upstream:G13]
+    /**
+     * Creates a client that receives Pub/Sub messages through {@code subscriptions}' callback, for
+     * subscriptions made later. The caller owns it and must close it.
+     */
+    public GlideClusterClient createSubscriber(ClusterSubscriptionConfiguration subscriptions) throws Exception {
+        GlideClusterClientConfiguration config = configBuilder(0, clusterNodes)
+                .subscriptionConfiguration(subscriptions)
+                .build();
+        return GlideClusterClient.createClient(config).get(CREATE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
     // [upstream:G8]
     GlideClusterClientConfiguration buildConfig(int db, List<String> seeds) {
+        return configBuilder(db, seeds).build();
+    }
+
+    private GlideClusterClientConfiguration.GlideClusterClientConfigurationBuilder<?, ?> configBuilder(int db, List<String> seeds) {
         var builder = GlideClusterClientConfiguration.builder()
                 .requestTimeout(requestTimeout)
                 .inflightRequestsLimit(inflightRequestsLimit)
@@ -113,7 +129,7 @@ public class BackendClients {
         if (topologyCheckSeconds > 0) {
             advanced.periodicChecks(PeriodicChecksManualInterval.builder().durationInSec(topologyCheckSeconds).build());
         }
-        return builder.advancedConfiguration(advanced.build()).build();
+        return builder.advancedConfiguration(advanced.build());
     }
 
     /** Get or create the shared client for the given database index. */

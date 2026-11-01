@@ -42,6 +42,7 @@ valkey-cli GET mykey
 - Multiple databases: SELECT with per-connection state (Valkey 9+ cluster mode).
 - Transactions: MULTI/EXEC and WATCH, atomic when all keys share a slot (use hash tags such as `{user1}`). Queue-time errors and EXECABORT behave as in Valkey, and WATCH is private to each client connection.
 - Cluster-wide SCAN, with cursors that work across connections.
+- Pub/Sub: SUBSCRIBE, PSUBSCRIBE and SSUBSCRIBE, in RESP2 (subscribed mode) and RESP3 (pushes). Clients share the proxy's subscriptions to the cluster, and each message is fanned out to every subscribed client.
 - Pipelining and inline commands.
 - Standalone-style HELLO and INFO; `CLUSTER INFO` and `CLUSTER NODES` answer like a server without cluster support.
 
@@ -282,6 +283,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - PING, ECHO, TIME, QUIT (answered by the proxy)
 - CLIENT (ID, INFO, LIST, KILL, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), RESET, AUTH, READONLY/READWRITE: answered by the proxy from its own connections. Forwarded, they would act on backend connections that every client shares.
 - AUTH and ACL WHOAMI use the proxy's own users (`proxy.auth.*`); other ACL subcommands go to a node.
+- SUBSCRIBE/PSUBSCRIBE/SSUBSCRIBE and their UNSUBSCRIBE counterparts: through the proxy's shared subscriptions (PUBLISH, SPUBLISH and PUBSUB go to the cluster)
 - PROXY: STATS, CLIENTINFO <id>, CONFIG GET <name|*>, CLUSTER INFO, HELP
 - Commands that administer a single node are refused by default (`proxy.node-admin-commands`), since through the proxy they reach whichever node Glide picks: SHUTDOWN, REPLICAOF/SLAVEOF, FAILOVER, DEBUG, SAVE, BGSAVE, BGREWRITEAOF, SYNC/PSYNC/REPLCONF, MODULE, CONFIG SET/REWRITE/RESETSTAT, ACL SETUSER/DELUSER/LOAD/SAVE, and the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, ...). Their read-only counterparts (CONFIG GET, ACL WHOAMI, CLUSTER KEYSLOT, ...) work.
 - Blocking commands (BLPOP, BRPOP, BLMOVE, BZPOPMIN, XREAD/XREADGROUP BLOCK, WAIT, ...) run on dedicated backend clients
@@ -312,11 +314,16 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 ## Limitations
 
-- RESP3 push messages aren't sent, since there is no Pub/Sub or client tracking yet.
 - Proxy users have no ACL rules: every user can run every command. AUTH and HELLO are rejected inside MULTI.
 - TLS to the cluster can't use a client certificate (a Glide limitation).
 - Private keys must be PKCS#8 (`BEGIN PRIVATE KEY`); convert others with `openssl pkcs8 -topk8 -nocrypt`.
-- Pub/Sub subscriptions (SUBSCRIBE, PSUBSCRIBE, SSUBSCRIBE) and MONITOR are rejected. PUBLISH works.
+- MONITOR is rejected.
+- Pub/Sub:
+  - PUBSUB CHANNELS, NUMSUB and NUMPAT are answered by one node, which counts the proxy as a single subscriber.
+  - Channel names that aren't valid UTF-8 aren't passed on exactly (a Glide limitation); payloads are binary-safe.
+  - Keyspace notifications arrive only from the node the proxy's subscription is on, since a node publishes them only locally.
+  - SUBSCRIBE and friends are rejected inside MULTI.
+  - A subscriber that falls 100,000 messages or 32 MB behind is disconnected, like Valkey's `client-output-buffer-limit pubsub`.
 - CLIENT PAUSE, UNPAUSE, TRACKING (client-side caching), CACHING, GETREDIR, TRACKINGINFO and UNBLOCK are rejected. NO-EVICT and NO-TOUCH are accepted but only recorded. In CLIENT LIST, `cmd` is the last command's name, and buffer, memory and network fields are 0.
 - A transaction is atomic only when all its keys share a slot. A cross-slot transaction is rejected with CROSSSLOT by default; with `proxy.transactions.cross-slot=pipeline`, its commands run in order without any atomicity. With WATCH, a cross-slot transaction is always rejected.
 - Inside MULTI, INFO, HELLO, SCAN, CLUSTER, PROXY and SELECT are rejected and the transaction is discarded. The proxy answers the first five itself, which EXEC on a node can't reproduce, and SELECT would switch the database of the shared backend connection.

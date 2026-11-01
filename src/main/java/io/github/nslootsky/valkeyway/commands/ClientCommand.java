@@ -7,6 +7,7 @@ package io.github.nslootsky.valkeyway.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.pubsub.PubSubSession;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.Users;
 import io.github.nslootsky.valkeyway.server.Request;
@@ -151,10 +152,7 @@ public class ClientCommand implements CommandHandler {
                 if (!Set.of("normal", "master", "replica", "slave", "pubsub").contains(type)) {
                     return Reply.error("ERR Unknown client type '" + given + "'");
                 }
-                // Every proxy client is a normal one.
-                if (!type.equals("normal")) {
-                    filter = _ -> false;
-                }
+                filter = c -> type.equals(typeOf(c));
             } else if (option.equals("id") && i + 1 < request.argCount()) {
                 Set<Long> ids = new HashSet<>();
                 while (i + 1 < request.argCount()) {
@@ -221,7 +219,7 @@ public class ClientCommand implements CommandHandler {
                     if (!Set.of("normal", "master", "replica", "slave", "pubsub").contains(type)) {
                         return Reply.error("ERR Unknown client type '" + value + "'");
                     }
-                    filters.add(_ -> type.equals("normal"));
+                    filters.add(c -> type.equals(typeOf(c)));
                 }
                 case "user" -> filters.add(c -> value.equals(userOf(c)));
                 case "addr" -> filters.add(c -> address(c.remoteAddress()).equals(value));
@@ -282,6 +280,7 @@ public class ClientCommand implements CommandHandler {
     String line(Connection c) {
         boolean multi = c.inTransaction();
         WatchSession watch = watches.current(c);
+        int[] subscriptions = PubSubSession.counts(c);
         StringBuilder flags = new StringBuilder();
         if (multi) {
             flags.append('x');
@@ -291,6 +290,9 @@ public class ClientCommand implements CommandHandler {
         }
         if (c.noTouch()) {
             flags.append('T');
+        }
+        if (c.subscribed()) {
+            flags.append('P');
         }
         if (flags.isEmpty()) {
             flags.append('N');
@@ -306,7 +308,7 @@ public class ClientCommand implements CommandHandler {
                 + " flags=" + flags
                 + " capa="
                 + " db=" + c.db()
-                + " sub=0 psub=0 ssub=0"
+                + " sub=" + subscriptions[0] + " psub=" + subscriptions[1] + " ssub=" + subscriptions[2]
                 + " multi=" + (multi ? Transaction.current(c).commands().size() : -1)
                 + " watch=" + (watch == null ? 0 : watch.keyCount())
                 + " qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=0 rbp=0 obl=0 oll=0 omem=0 tot-mem=0"
@@ -317,6 +319,11 @@ public class ClientCommand implements CommandHandler {
                 + " lib-ver=" + c.libVersion()
                 + " tot-net-in=0 tot-net-out=0"
                 + " tot-cmds=" + c.totalCommands();
+    }
+
+    /** A client with subscriptions is a pubsub client; every other proxy client is a normal one. */
+    private static String typeOf(Connection c) {
+        return c.subscribed() ? "pubsub" : "normal";
     }
 
     /** As Valkey, a connection that hasn't authenticated yet shows as the default user. */

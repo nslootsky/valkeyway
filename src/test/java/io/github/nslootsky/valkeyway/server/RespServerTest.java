@@ -51,6 +51,7 @@ class RespServerTest {
                     return Reply.Null.ARRAY;
                 })
                 .register("id", r -> Reply.integer(r.connection().id()))
+                .register("iping", (InlineCommandHandler) r -> Reply.PONG)
                 .register("big", r -> Reply.integer(5_000_000_001L))
                 .register("quit", r -> {
                     r.connection().closeAfterReply();
@@ -84,6 +85,20 @@ class RespServerTest {
             assertEquals(5_000_000_001L, c.call("BIG"));
             assertEquals(new Error("ERR kaboom"), c.call("BOOM"));
             assertEquals(new Status("PONG"), c.call("PING"), "connection survives a handler error");
+        }
+    }
+
+    /**
+     * A barrier queued behind an inline command (both waiting for an earlier barrier) runs as soon as
+     * the inline reply is out, without the client sending anything more.
+     */
+    @Test
+    void aBarrierBehindAnInlineCommandRuns() throws Exception {
+        start(100, 0);
+        try (RawRespClient c = client()) {
+            assertEquals(List.of(new Status("OK"), new Status("PONG"), new Status("OK"), new Status("PONG")),
+                    c.pipeline(List.of(new String[]{"SLEEP", "100"}, new String[]{"IPING"}, new String[]{"SLEEP", "1"},
+                            new String[]{"IPING"})));
         }
     }
 

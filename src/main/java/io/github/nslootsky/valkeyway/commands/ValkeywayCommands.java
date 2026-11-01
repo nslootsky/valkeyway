@@ -20,6 +20,9 @@ import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.ops.MetricsCollector;
+import io.github.nslootsky.valkeyway.pubsub.Kind;
+import io.github.nslootsky.valkeyway.pubsub.PubSubCommand;
+import io.github.nslootsky.valkeyway.pubsub.PubSubHub;
 import io.github.nslootsky.valkeyway.server.CommandTable;
 import io.github.nslootsky.valkeyway.server.Users;
 
@@ -33,7 +36,8 @@ public final class ValkeywayCommands {
 
     public static CommandTable create(BackendClients backendClients, ScanCursorStore scanCursorStore,
                                       MetricsCollector metrics, BlockingClientPool blockingPool,
-                                      WatchClientPool watchPool, Users users, ValkeywayProperties props) {
+                                      WatchClientPool watchPool, Users users, PubSubHub pubSub,
+                                      ValkeywayProperties props) {
         CommandKeyExtractor keys = new CommandKeyExtractor();
         keys.preloadInBackground(() -> backendClients.getClient(0));
         Backend backend = new Backend(keys);
@@ -44,7 +48,6 @@ public final class ValkeywayCommands {
                 new BlockingCommandRunner(blockingPool, backend),
                 new TransactionQueue(backendClients, keys, nodeAdmin), nodeAdmin);
         ClientCommand client = new ClientCommand(watches);
-        String noPubSub = " (Pub/Sub isn't supported yet)";
         CommandTable table = new CommandTable(catchAll)
                 .listener(metrics)
                 .rejectInTransaction(request -> {
@@ -78,8 +81,15 @@ public final class ValkeywayCommands {
                 .register("readonly", LocalCommand.accept(Reply.OK))
                 .register("readwrite", LocalCommand.accept(Reply.OK))
                 .register("monitor", LocalCommand.unsupported("MONITOR", ""));
-        for (String name : new String[]{"subscribe", "psubscribe", "ssubscribe", "unsubscribe", "punsubscribe", "sunsubscribe"}) {
-            table.register(name, LocalCommand.unsupported(name.toUpperCase(Locale.ROOT), noPubSub));
+        // Subscriptions go through the shared Pub/Sub hub, never over the backend connections.
+        for (Kind kind : Kind.values()) {
+            String prefix = switch (kind) {
+                case CHANNEL -> "";
+                case PATTERN -> "p";
+                case SHARD -> "s";
+            };
+            table.register(prefix + "subscribe", PubSubCommand.subscribe(pubSub, kind));
+            table.register(prefix + "unsubscribe", PubSubCommand.unsubscribe(pubSub, kind));
         }
         return table;
     }

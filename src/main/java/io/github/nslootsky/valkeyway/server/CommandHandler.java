@@ -37,4 +37,12 @@ public interface CommandHandler {
     default boolean allowedBeforeAuth() {
         return false;
     }
+
+    /**
+     * Whether a RESP2 connection with subscriptions may run this command ((P|S)SUBSCRIBE,
+     * (P|S)UNSUBSCRIBE, PING, QUIT and RESET). RESP3 connections may run anything.
+     */
+    default boolean allowedWhileSubscribed() {
+        return false;
+    }
 }

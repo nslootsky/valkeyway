@@ -155,6 +155,16 @@ Glide 2.5.3 can connect over TLS (`useTLS`), with custom root certificates or wi
 - **Code:** `BackendClients.buildConfig`.
 - **Live test:** `BackendTlsTest` (a TLS-only cluster that requires a password, with certificates for 127.0.0.1).
 
+### G14: Glide's Pub/Sub API
+
+The proxy subscribes through Glide's dynamic Pub/Sub API (`subscribe`, `psubscribe`, `ssubscribe` and their unsubscribe counterparts, with a timeout), with messages delivered to the callback of the client's `ClusterSubscriptionConfiguration`. Glide keeps the subscriptions across reconnects and slot moves. Three details shape the design:
+- The callback gets the same `PubSubMessage` for a message and a shard message (`MessageHandler`: `Message` and `SMessage` share a case), so shard channels get a client of their own.
+- Channel names and patterns are passed as `String`, so names that aren't valid UTF-8 don't reach the cluster exactly. Payloads are binary-safe.
+- A subscription to a regular channel or pattern lives on one node. PUBLISH reaches every node, but keyspace notifications are published only on the node that holds the key, so through the proxy they arrive only from that one node. *Not covered by a test.*
+
+- **Code:** `PubSubHub`, `PubSubCommand`.
+- **Live test:** `PubSubTest` (messages, patterns and shard messages; messages published on a node).
+
 ---
 
 ## Valkey
@@ -232,3 +242,10 @@ RESET switches back to the default user, so with a password the connection must 
 
 - **Code:** `AuthCommand`, `HelloCommand`, `ResetCommand`, `CommandTable` (NOAUTH), `RespDecoder` (limits).
 - **Live test:** `ClientAuthTlsTest` (the replies, as Valkey gives them), `TlsAndAuthServerTest`.
+
+### V8: Pub/Sub replies and subscribed mode
+
+A (P|S)SUBSCRIBE confirms each name with `[subscribe, name, count]` (a push in RESP3), where the count is the client's channels plus patterns, or for SSUBSCRIBE its shard channels. An UNSUBSCRIBE with nothing to unsubscribe answers `[unsubscribe, nil, count]`. A RESP2 client with subscriptions may only run (P|S)SUBSCRIBE, (P|S)UNSUBSCRIBE, PING, QUIT and RESET; anything else gets `ERR Can't execute '<command>': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`, and PING answers `[pong, message]`. Messages are `[message, channel, payload]`, `[pmessage, pattern, channel, payload]` and `[smessage, channel, payload]`. RESET drops every subscription.
+
+- **Code:** `PubSubCommand`, `PubSubSession`, `CommandTable` (subscribed-mode error), `PingCommand`.
+- **Live test:** `PubSubTest.confirmationsAndErrorsMatchAServer` and `confirmationsMatchAServerInResp3` (proxy and node compared frame by frame).

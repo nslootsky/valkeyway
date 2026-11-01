@@ -81,6 +81,33 @@ public class RawRespClient implements AutoCloseable {
         return read();
     }
 
+    /** Reads one reply (or pushed message) without sending anything. */
+    public Object readReply() throws IOException {
+        return read();
+    }
+
+    /** Reads replies until none arrives for {@code quietMs}. */
+    public List<Object> readUntilQuiet(int quietMs) throws IOException {
+        List<Object> replies = new ArrayList<>();
+        int timeout = socket.getSoTimeout();
+        socket.setSoTimeout(quietMs);
+        try {
+            while (true) {
+                in.mark(1);
+                if (in.read() < 0) {
+                    break;
+                }
+                in.reset();
+                replies.add(read());
+            }
+        } catch (java.net.SocketTimeoutException e) {
+            // quiet
+        } finally {
+            socket.setSoTimeout(timeout);
+        }
+        return replies;
+    }
+
     /** Sends a command without reading a reply (for CLIENT REPLY OFF and the like). */
     public void send(String... args) throws IOException {
         out.write(encode(args));

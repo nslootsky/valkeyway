@@ -77,6 +77,8 @@ public final class Connection {
          * barriers and take it again after running.
          */
         boolean resp3 = protocol == 3;
+        /** A Pub/Sub message rather than a reply: never dropped by CLIENT REPLY. */
+        boolean push;
 
         Slot(byte[] name) {
             this.name = name;
@@ -122,6 +124,10 @@ public final class Connection {
     private volatile String user;
     /** RESP version, 2 or 3 (HELLO). */
     private volatile int protocol = 2;
+    /** Whether the client has Pub/Sub subscriptions. */
+    private volatile boolean subscribed;
+    /** Pushed messages waiting behind replies or for the socket. Event loop only. */
+    private int pendingPushes;
     private boolean inTransaction;
     /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
     private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
@@ -166,7 +172,7 @@ public final class Connection {
                     break;
                 }
                 Request request = new Request(this, command);
-                CommandHandler handler = commands.lookup(command[0], inTransaction, user != null);
+                CommandHandler handler = commands.lookup(command[0], inTransaction, user != null, subscribed && protocol == 2);
                 if (handler instanceof InlineCommandHandler) {
                     waiting.poll();
                     addInline(handler, request);
@@ -176,11 +182,15 @@ public final class Connection {
                     }
                     waiting.poll();
                     startUnit(async, request);
-                } else if (slots.isEmpty()) {
+                } else {
+                    // A barrier waits for every earlier reply. Write those that are ready (inline
+                    // replies just added): nothing else would come back here to start it.
+                    writeCompleted();
+                    if (closed || !slots.isEmpty()) {
+                        break; // an earlier unit's completion pumps again
+                    }
                     waiting.poll();
                     startBarrier(handler, request);
-                } else {
-                    break; // a barrier waits for every earlier reply
                 }
             }
         } finally {
@@ -218,7 +228,7 @@ public final class Connection {
         byte[][] next;
         while (slots.size() < MAX_IN_FLIGHT && (next = waiting.peek()) != null) {
             Request request = new Request(this, next);
-            CommandHandler h = commands.lookup(next[0], inTransaction, user != null);
+            CommandHandler h = commands.lookup(next[0], inTransaction, user != null, subscribed && protocol == 2);
             if (h == handler && handler.canRunAsync(request)) {
                 waiting.poll();
                 Slot slot = new Slot(next[0]);
@@ -312,7 +322,10 @@ public final class Connection {
         Slot head;
         while (!closed && (head = slots.peek()) != null && head.done) {
             slots.poll();
-            if (sendReply()) {
+            if (head.push) {
+                pendingPushes--;
+            }
+            if (head.push || sendReply()) {
                 channel.write(head.resp3 ? new ReplyEncoder.Resp3(head.reply) : head.reply);
                 wrote = true;
             }
@@ -363,7 +376,7 @@ public final class Connection {
 
     /** Pause or resume reading from the socket. Event loop only. */
     void updateReading() {
-        int backlog = waiting.size() + slots.size();
+        int backlog = waiting.size() + slots.size() - pendingPushes;
         boolean pause = channel.isActive() && (backlog >= PAUSE_AT || !channel.isWritable());
         boolean resume = readPaused && channel.isWritable() && backlog <= RESUME_AT;
         if (pause && !readPaused) {
@@ -508,6 +521,50 @@ public final class Connection {
 
     public String name() {
         return name;
+    }
+
+    /** Most pushed messages queued for one client before it is disconnected (Valkey: client-output-buffer-limit pubsub). */
+    static final int MAX_PENDING_PUSHES = 100_000;
+    /** ...or queued bytes not yet written to its socket. */
+    static final long MAX_PENDING_PUSH_BYTES = 32L * 1024 * 1024;
+
+    /**
+     * Sends a Pub/Sub message. Safe from any thread. It goes out after the replies to every command
+     * already received (so a SUBSCRIBE's confirmation always precedes its first message), in the
+     * protocol the client speaks then. A client that doesn't keep up is disconnected.
+     */
+    public void push(Reply.Push message) {
+        onLoop(() -> {
+            if (closed) {
+                return;
+            }
+            var outbound = channel.unsafe().outboundBuffer();
+            if (pendingPushes >= MAX_PENDING_PUSHES
+                    || (outbound != null && outbound.totalPendingWriteBytes() > MAX_PENDING_PUSH_BYTES)) {
+                log.warn("Disconnecting client {}: it isn't reading its Pub/Sub messages fast enough", id);
+                closed = true;
+                waiting.clear();
+                slots.clear();
+                channel.close();
+                return;
+            }
+            Slot slot = new Slot(null);
+            slot.reply = message;
+            slot.done = true;
+            slot.push = true;
+            slots.add(slot);
+            pendingPushes++;
+            writeCompleted();
+        });
+    }
+
+    /** Whether the client has subscriptions (set by the Pub/Sub commands). */
+    public boolean subscribed() {
+        return subscribed;
+    }
+
+    public void subscribed(boolean subscribed) {
+        this.subscribed = subscribed;
     }
 
     /** The RESP version the client speaks: 2, or 3 after {@code HELLO 3}. */

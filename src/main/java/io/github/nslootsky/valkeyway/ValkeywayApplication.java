@@ -11,6 +11,7 @@ import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.commands.ValkeywayCommands;
 import io.github.nslootsky.valkeyway.ops.MetricsCollector;
 import io.github.nslootsky.valkeyway.commands.ScanCursorStore;
+import io.github.nslootsky.valkeyway.pubsub.PubSubHub;
 import io.github.nslootsky.valkeyway.server.RespServer;
 import io.github.nslootsky.valkeyway.server.TlsContext;
 import io.github.nslootsky.valkeyway.server.Users;
@@ -49,7 +50,12 @@ public class ValkeywayApplication {
     }
 
     @Bean(destroyMethod = "close")
-    RespServer respServer(ValkeywayProperties props, Users users, BackendClients backendClients,
+    PubSubHub pubSubHub(BackendClients backendClients, ValkeywayProperties props) {
+        return new PubSubHub(backendClients, (int) props.requestTimeoutMs());
+    }
+
+    @Bean(destroyMethod = "close")
+    RespServer respServer(ValkeywayProperties props, Users users, PubSubHub pubSub, BackendClients backendClients,
                           ScanCursorStore scanCursorStore, MetricsCollector metrics, BlockingClientPool blockingPool,
                           WatchClientPool watchPool) throws InterruptedException, IOException {
         ValkeywayProperties.Clients clients = props.clients();
@@ -61,7 +67,7 @@ public class ValkeywayApplication {
                 new RespServer.Settings(props.host(), props.port() == 0 ? -1 : props.port(),
                         tls.port() == 0 ? -1 : tls.port(), tlsContext, clients.ioThreads(), clients.maxClients(),
                         clients.timeoutSeconds(), users.authRequired()),
-                ValkeywayCommands.create(backendClients, scanCursorStore, metrics, blockingPool, watchPool, users, props));
+                ValkeywayCommands.create(backendClients, scanCursorStore, metrics, blockingPool, watchPool, users, pubSub, props));
         server.start();
         log.info("Proxy ready");
         return server;
