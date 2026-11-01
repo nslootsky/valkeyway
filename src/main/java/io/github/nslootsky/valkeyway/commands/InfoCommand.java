@@ -9,6 +9,7 @@ import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
 import glide.api.models.configuration.RequestRoutingConfiguration.SimpleMultiNodeRoute;
+import io.github.nslootsky.valkeyway.ProxyVersion;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.ops.MetricsCollector;
 import io.github.nslootsky.valkeyway.protocol.Reply;
@@ -164,6 +165,7 @@ public class InfoCommand implements CommandHandler {
         fields.replace("redis_mode", "standalone");
         fields.replace("server_mode", "standalone");
         fields.replace("tcp_port", Integer.toString(local.getPort()));
+        fields.put("valkeyway_version", ProxyVersion.get());
         if (node.containsKey("listener0")) {
             // The address this client connected to (the proxy's bind address isn't known here).
             fields.put("listener0", "name=" + (connection.tls() ? "tls" : "tcp") + ",bind="
