@@ -75,14 +75,24 @@ public class GlideClientCache {
      */
     public GlideClusterClient getClient(int db) {
         return cache.get(db, key -> {
-            try {
-                GlideClusterClient client = GlideClusterClient.createClient(buildConfig(db)).get(10, TimeUnit.SECONDS);
-                log.info("Created GlideClusterClient for db={}", db);
-                return client;
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to create GlideClusterClient for db=" + db, e);
-            }
+            GlideClusterClient client = createClient(db);
+            log.info("Created GlideClusterClient for db={}", db);
+            return client;
         });
+    }
+
+    /**
+     * Creates a new, uncached client for the given database. The caller owns it and must close it.
+     */
+    public GlideClusterClient createClient(int db) {
+        try {
+            return GlideClusterClient.createClient(buildConfig(db)).get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted creating GlideClusterClient for db=" + db, e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create GlideClusterClient for db=" + db, e);
+        }
     }
 
     public int getActiveClients() {

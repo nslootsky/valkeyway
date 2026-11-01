@@ -136,7 +136,7 @@ Ordering note: a leased client is a different connection, so the barrier before 
 
 Each phase ends green on the full suite and with a benchmark run.
 
-0. **Fix the node stall now, on the current code:** route blocking commands through a leased pool. It's independent of the protocol layer and fixes a correctness bug.
+0. **Fix the node stall now, on the current code:** route blocking commands through a leased pool. It's independent of the protocol layer and fixes a correctness bug. *Done:* a same-slot GET during a BLPOP now answers in ~4 ms instead of failing after 2 s; throughput is unchanged (A/B within ±2%).
 1. **New transport, decoder, encoder and `Connection`; resp-server removed.** Existing handlers run via a sync adapter on a per-connection virtual thread (serial, no pipelining yet). This alone removes event-loop blocking (thread stall), fixes the idle disconnect, 64-bit integers and the null array.
 2. **Async hot path:** `CatchAllCommand` returns its future, with the ordered pipeline and barriers. This is the throughput phase.
 3. RESP3 and `HELLO 3`.

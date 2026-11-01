@@ -100,6 +100,9 @@ proxy:
     - "127.0.0.1:7001"
     - "127.0.0.1:7002"
   connect-timeout-ms: 2000      # Request timeout for glide
+  blocking-pool:                # Dedicated backend clients for BLPOP, XREAD BLOCK, WAIT, ...
+    max-size: 64                # Max blocking commands running at once; more wait for a free client
+    idle-timeout-seconds: 60    # Close a pooled client after this long unused
 
 management:
   server:
@@ -179,6 +182,8 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - **Metrics**: `GET http://localhost:6380/actuator/metrics`
   - `proxy.commands.processed` — total commands processed (tagged by command type)
   - `proxy.errors` — total command errors
+  - `proxy.blocking.pool.in_use` / `proxy.blocking.pool.clients` — blocking commands running / pooled clients open
+  - `proxy.blocking.pool.exhausted_waits` — blocking commands that had to wait because the pool was full
   - `proxy.commands.latency` — command execution latency histogram
 
 - **Prometheus**: `GET http://localhost:6380/actuator/prometheus`
@@ -219,6 +224,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - SCAN cursors during iteration are UUIDs (not numeric), `"0"` returned on completion
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error
-- Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, etc.) work but block the session's connection until timeout or data arrives
+- Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, WAIT, etc.) run on a pool of dedicated backend clients (`proxy.blocking-pool`), so they don't hold up other clients' commands to the same node. While blocked they still occupy one of the proxy's network threads, which can delay other clients sharing that thread
+- Stream replies (XRANGE, XREAD, ...) are not yet shaped exactly like a standalone server's RESP2 replies
 - Pub/Sub commands (SUBSCRIBE, PSUBSCRIBE) are not supported
 - No TLS support
