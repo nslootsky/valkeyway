@@ -13,6 +13,8 @@ import glide.api.GlideClusterClient;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
+import io.github.nslootsky.valkeyway.cluster.ClusterSlots;
+import io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor;
 import io.github.nslootsky.valkeyway.handler.SessionState;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
 import org.slf4j.Logger;
@@ -32,6 +34,7 @@ public class CatchAllCommand implements RespCommand {
 
     private final GlideClientCache glideClientCache;
     private final MetricsCollector metrics;
+    private final CommandKeyExtractor keyExtractor = new CommandKeyExtractor();
 
     public CatchAllCommand(GlideClientCache glideClientCache, MetricsCollector metrics) {
         this.glideClientCache = glideClientCache;
@@ -116,37 +119,15 @@ public class CatchAllCommand implements RespCommand {
         for (var param : request.getParams()) {
             cmdBytes[i++] = param.getBytes();
         }
-        List<byte[]> keys = extractKeys(cmdBytes);
+        GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
         Set<Integer> slots = SessionState.getTransactionSlots(session);
-        for (byte[] key : keys) {
-            int hash = 0;
-            for (byte b : key) {
-                hash = (hash * 31) + b;
-            }
-            slots.add(hash & 0x3FFF);
+        for (byte[] key : keyExtractor.extractKeys(client, cmdBytes)) {
+            slots.add(ClusterSlots.slot(key));
         }
         SessionState.setTransactionSlots(session, slots);
         List<byte[][]> commands = SessionState.getTransactionCommands(session);
         commands.add(cmdBytes);
         SessionState.setTransactionCommands(session, commands);
-    }
-
-    private List<byte[]> extractKeys(byte[][] cmdBytes) {
-        String command = new String(cmdBytes[0], java.nio.charset.StandardCharsets.US_ASCII).toUpperCase();
-        if (cmdBytes.length < 2) {
-            return List.of();
-        }
-        return switch (command) {
-            case "DEL", "UNLINK", "MGET", "EXISTS", "TOUCH" -> {
-                List<byte[]> keys = new ArrayList<>();
-                for (int i = 1; i < cmdBytes.length; i++) {
-                    keys.add(cmdBytes[i]);
-                }
-                yield keys;
-            }
-            case "SET", "GET", "HSET", "HGET", "INCR", "DECR" -> List.of(cmdBytes[1]);
-            default -> List.of(cmdBytes[1]);
-        };
     }
 
     private RedisToken handleCustomCommand(Request request) {

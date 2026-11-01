@@ -126,7 +126,7 @@ public class CommandCommand implements RespCommand {
                 }
                 yield RedisToken.string(s);
             }
-            case Number n -> RedisToken.integer(n.intValue());
+            case Number n -> TokenUtils.toRedisToken(n);
             case Boolean b -> RedisToken.integer(b ? 1 : 0);
             case Object[] arr -> toRedisArrayForDocs(arr);
             case java.util.Collection<?> list -> toRedisArrayForDocs(list.toArray());
