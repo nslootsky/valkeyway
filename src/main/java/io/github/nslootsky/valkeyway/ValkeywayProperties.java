@@ -30,7 +30,7 @@ public record ValkeywayProperties(
         connectTimeoutMs = Math.max(connectTimeoutMs, 500);
         if (blockingPool == null) blockingPool = new BlockingPool(0, 0);
         if (clients == null) clients = new Clients(0, 0, 0);
-        if (glide == null) glide = new Glide(0, null);
+        if (glide == null) glide = new Glide(0, null, null, 0);
     }
 
     /**
@@ -43,11 +43,21 @@ public record ValkeywayProperties(
      * @param coalesceRequests send single commands that arrive from different connections in the same
      *        network-thread iteration to Glide as one batch (default true). Glide's per-request cost is
      *        much higher than its per-command cost inside a batch.
+     * @param refreshTopologyFromSeeds discover topology changes by asking the configured
+     *        {@code cluster-nodes}, resolved again each time, rather than the nodes already known
+     *        (default true). With a DNS name as the seed (e.g. a configuration endpoint), re-pointing
+     *        the name at another cluster moves the proxy there at the next topology check. If the seeds
+     *        can't be reached, Glide falls back to the nodes it knows.
+     * @param topologyCheckSeconds how often Glide checks for topology changes, which is also how
+     *        quickly a re-pointed seed name is followed; 0 = Glide's default (60).
      */
-    public record Glide(int inflightRequestsLimit, Boolean coalesceRequests) {
+    public record Glide(int inflightRequestsLimit, Boolean coalesceRequests, Boolean refreshTopologyFromSeeds,
+                        int topologyCheckSeconds) {
         public Glide {
             if (inflightRequestsLimit <= 0) inflightRequestsLimit = 50_000;
             if (coalesceRequests == null) coalesceRequests = true;
+            if (refreshTopologyFromSeeds == null) refreshTopologyFromSeeds = true;
+            if (topologyCheckSeconds < 0) topologyCheckSeconds = 0;
         }
     }
 

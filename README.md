@@ -91,7 +91,7 @@ Via `application.yml` or command-line args:
 proxy:
   host: 0.0.0.0                 # Listen address for clients
   port: 6379                    # Listen port for clients
-  cluster-nodes:                # Seed nodes to discover topology
+  cluster-nodes:                # Seed nodes: IPs or DNS names (e.g. a configuration endpoint)
     - "127.0.0.1:7000"
     - "127.0.0.1:7001"
     - "127.0.0.1:7002"
@@ -102,6 +102,8 @@ proxy:
   glide:
     inflight-requests-limit: 50000  # Outstanding requests per Glide client (Glide's default is 1000)
     coalesce-requests: true         # Send concurrent clients' commands to Glide in shared batches
+    refresh-topology-from-seeds: true  # Check topology via the seeds, re-resolving DNS names (follows a re-pointed endpoint)
+    topology-check-seconds: 0       # How often Glide checks for topology changes; 0 = Glide's default (60)
   clients:
     max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
     timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)
@@ -232,3 +234,6 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - Pub/Sub commands (SUBSCRIBE, PSUBSCRIBE) are not supported
 - RESP2 only (HELLO 3 is answered with protocol 2)
 - No TLS support
+- Topology changes: ASK/MOVED/TRYAGAIN, new shards and failovers are handled. In a client pipeline, a command the cluster rejects mid-migration or mid-failover (TRYAGAIN, CLUSTERDOWN, ...) gets that error rather than being retried, as with a standalone server's pipeline. While a node is unreachable, clients get `ERR backend unavailable: ...` saying whether the command ran
+- A primary that hangs without closing its connections (frozen process, network partition) keeps getting its shard's requests until it answers again, even after its replica is promoted; a primary that dies is replaced as soon as the replica is promoted (a Glide limitation)
+- A re-pointed seed DNS name is followed at the next topology check (`topology-check-seconds`), though Glide refreshes at most once every 15-30 s
