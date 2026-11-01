@@ -23,6 +23,7 @@ import java.util.List;
 /**
  * EXEC command handler. Executes queued transaction commands.
  * Uses ClusterBatch(true) for single-slot, ClusterBatch(false) for cross-slot.
+ * Per-command failures are returned as error elements in the result array.
  */
 @Command("exec")
 public class ExecCommand implements RespCommand {
@@ -67,7 +68,15 @@ public class ExecCommand implements RespCommand {
             }
 
             log.debug("EXEC {} commands crossSlot={}", buffered.size(), crossSlot);
-            Object[] results = client.exec(batch, true).get();
+            // raiseOnError=false: a failing command yields an error element in the reply array,
+            // matching Valkey's EXEC semantics, instead of failing the whole reply.
+            Object[] results = client.exec(batch, false).get();
+            if (results == null) {
+                // Aborted by WATCH. Valkey replies with a null array (*-1); resp-server 1.0 cannot
+                // encode one, so send the null bulk string, which clients also read as nil.
+                log.debug("EXEC aborted (WATCH)");
+                return RedisToken.nullString();
+            }
             log.debug("EXEC OK results={}", results.length);
             return TokenUtils.toRedisArray(results);
         } catch (Exception e) {
