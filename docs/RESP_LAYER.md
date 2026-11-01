@@ -186,3 +186,5 @@ Each phase ends green on the full suite and with a benchmark run.
 - A new client (another database, the blocking pool) whose configured seeds can't be reached at all is created from the nodes a live client currently knows (CLUSTER NODES), with a warning to update `proxy.cluster-nodes`.
 
 `SeedDnsTest` runs the packaged proxy in a container seeded with a host name, re-points the name from one cluster to another by rewriting the container's /etc/hosts, then removes it. With `refresh-topology-from-seeds=false` the proxy stays on the old cluster indefinitely.
+
+The Glide and Valkey behaviors these findings rely on are catalogued, with their code sites and guarding tests, in [UPSTREAM_ASSUMPTIONS.md](UPSTREAM_ASSUMPTIONS.md).

@@ -21,6 +21,8 @@ import java.util.Set;
  * glide-core's value_conversion.rs) plus commands whose RESP3 reply is natively a map. Keyless
  * commands are not covered: their map replies (CONFIG GET, MEMORY STATS, ...) have ASCII keys
  * whose order doesn't matter.
+ *
+ * <p>Relies on upstream behavior: [upstream:G5] [upstream:G6] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public final class MapReplyCommands {
 

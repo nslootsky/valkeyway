@@ -31,7 +31,8 @@ import java.util.concurrent.Executor;
  *   <li>Commands an {@link AsyncCommandHandler} can start go to the backend as one <em>unit</em> at a
  *       time: a single command, or (when several have queued up, i.e. a pipeline) one ordered batch
  *       of all of them. The next unit starts when the current one completes. (Glide does not keep the
- *       order of separately submitted requests, but it does keep order within a batch.)</li>
+ *       order of separately submitted requests, but it does keep order within a batch:
+ *       [upstream:G4] (docs/UPSTREAM_ASSUMPTIONS.md).)</li>
  *   <li>{@link InlineCommandHandler} commands are answered on the spot.</li>
  *   <li>Everything else is a <em>barrier</em>: it waits until every earlier reply is ready, runs on a
  *       virtual thread (so it may block, e.g. in BLPOP or on Glide), and later commands wait for it.

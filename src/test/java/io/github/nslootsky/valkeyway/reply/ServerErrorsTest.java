@@ -35,8 +35,6 @@ class ServerErrorsTest {
                     + " | EXECABORT Transaction discarded because of previous errors.",
             "ResponseError: syntax error | ERR syntax error",
             "ERR invalid SCAN cursor | ERR invalid SCAN cursor",
-            "glide.api.models.exceptions.TimeoutException: Request timed out"
-                    + " | ERR backend request timed out; the command may or may not have run",
     })
     void errorMessagesUseServerErrorCodes(String glideMessage, String expected) {
         assertEquals(expected, ServerErrors.message(glideMessage));
@@ -85,5 +83,25 @@ class ServerErrorsTest {
     })
     void recognisesErrorsRejectedWithoutRunning(String message, boolean expected) {
         assertEquals(expected, ServerErrors.rejectedWithoutRunning(new Reply.Error(message)));
+    }
+
+    @Test
+    void glidesTypedFailuresAreRecognisedByType() {
+        assertEquals(new Reply.Error("ERR backend request timed out; the command may or may not have run"),
+                ServerErrors.error(new java.util.concurrent.ExecutionException(
+                        new glide.api.models.exceptions.TimeoutException("Request timed out"))));
+        assertEquals(new Reply.Error("ERR backend unavailable: the backend client is closed; the command may or may not have run"),
+                ServerErrors.error(new java.util.concurrent.CompletionException(
+                        new glide.api.models.exceptions.ClosingException("Client closed: Unable to submit command."))));
+    }
+
+    @Test
+    void recognisesRedirectsGlideDidNotFollow() {
+        assertEquals(true, ServerErrors.isUnfollowedRedirect(new java.util.concurrent.CompletionException(
+                new glide.api.models.exceptions.RequestException(
+                        "An error was signalled by the server: - Moved: 11420 127.0.0.1:27102"))));
+        assertEquals(true, ServerErrors.isUnfollowedRedirect(new RuntimeException("MOVED 3739 127.0.0.1:27103; ExtensionError")));
+        assertEquals(false, ServerErrors.isUnfollowedRedirect(new RuntimeException("TRYAGAIN Multiple keys request")));
+        assertEquals(false, ServerErrors.isUnfollowedRedirect(new RuntimeException((String) null)));
     }
 }

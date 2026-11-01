@@ -24,6 +24,8 @@ import java.util.Map;
  *
  * <p>Output uses {@code Object[]} for arrays and {@link GlideString} for strings that must be sent
  * as bulk strings (formatted numbers); everything else passes through unchanged.
+ *
+ * <p>Relies on upstream behavior: [upstream:G6] [upstream:G7] [upstream:V1] [upstream:V2] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public final class Resp2Shapes {
 
@@ -77,6 +79,7 @@ public final class Resp2Shapes {
      * Commands whose reply is a status (simple string) other than OK. With binary output Glide
      * returns those as GlideString, indistinguishable from a bulk string, so they're listed here.
      */
+    // [upstream:G7]
     private static final java.util.Set<String> STATUS_COMMANDS = java.util.Set.of(
             "type", "bgsave", "bgrewriteaof", "migrate");
 
@@ -94,6 +97,7 @@ public final class Resp2Shapes {
     // --- nulls ---
 
     /** Commands whose "nothing" reply is a null array ({@code *-1}) in RESP2, not a null bulk string. */
+    // [upstream:V2]
     private static final java.util.Set<String> NULL_ARRAY_COMMANDS = java.util.Set.of(
             // blocking timeouts (blocked.c replyToBlockedClientTimedOut: list, zset and stream types)
             "blpop", "brpop", "blmove", "brpoplpush", "blmpop", "bzpopmin", "bzpopmax", "bzmpop",
@@ -210,7 +214,7 @@ public final class Resp2Shapes {
 
     // --- geo ---
 
-    /** GEODIST and WITHDIST: Valkey sends "%.4f". */
+    /** GEODIST and WITHDIST: Valkey sends "%.4f". [upstream:V1] */
     private static Object distance(Object value) {
         return value instanceof Double d ? bulk(DoubleFormat.fixed(d, 4, false)) : value;
     }

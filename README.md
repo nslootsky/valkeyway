@@ -215,6 +215,10 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - SCRIPT/EVAL, CONFIG, CLIENT subcommands
 - Keys routed by glide; cross-slot operations may return CROSSSLOT errors
 
+## Upstream assumptions
+
+ValkeyWay relies on details of valkey-glide and Valkey that aren't stable APIs: Glide's error message formats, the Java types it returns, what it retries, and some of Valkey's reply formats. [docs/UPSTREAM_ASSUMPTIONS.md](docs/UPSTREAM_ASSUMPTIONS.md) lists each one, with the code it affects (tagged `[upstream:ID]`) and the test that catches a change. Check it when upgrading either.
+
 ## Tech Stack
 
 - Java 25

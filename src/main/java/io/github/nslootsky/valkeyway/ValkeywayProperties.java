@@ -51,6 +51,7 @@ public record ValkeywayProperties(
      * @param topologyCheckSeconds how often Glide checks for topology changes, which is also how
      *        quickly a re-pointed seed name is followed; 0 = Glide's default (60).
      */
+    // [upstream:G8] [upstream:G9]
     public record Glide(int inflightRequestsLimit, Boolean coalesceRequests, Boolean refreshTopologyFromSeeds,
                         int topologyCheckSeconds) {
         public Glide {

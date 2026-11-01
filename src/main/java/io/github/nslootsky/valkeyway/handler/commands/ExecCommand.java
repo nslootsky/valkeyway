@@ -72,7 +72,7 @@ public class ExecCommand implements CommandHandler {
             Object[] results = client.exec(batch, false).get();
             if (results == null) {
                 log.debug("EXEC aborted (WATCH)");
-                return Reply.Null.ARRAY;
+                return Reply.Null.ARRAY; // [upstream:V2] aborted EXEC
             }
             List<Reply> replies = new ArrayList<>(results.length);
             for (int i = 0; i < results.length; i++) {

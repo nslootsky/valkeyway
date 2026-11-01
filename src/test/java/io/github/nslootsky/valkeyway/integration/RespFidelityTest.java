@@ -122,14 +122,58 @@ class RespFidelityTest extends IntegrationTestBase {
         }
     }
 
+    /** [upstream:G1] Glide's error text is mapped back to the codes Valkey sends. */
     @Test
     void errorsUseServerErrorCodes() throws Exception {
         try (RawRespClient c = connect()) {
+            c.call("DEL", "fid:str", "fid:stream");
             c.call("SET", "fid:str", "v");
             assertError("WRONGTYPE Operation against a key", c.call("LPUSH", "fid:str", "x"));
             assertError("NOSCRIPT ", c.call("EVALSHA", "0000000000000000000000000000000000000000", "0"));
             assertError("CROSSSLOT ", c.call("SUNION", "fid:s1", "fid:s2"));
             assertError("ERR wrong number of arguments for 'get' command", c.call("GET"));
+            assertError("ERR unknown command", c.call("NOSUCHCOMMAND", "fid:str"));
+            assertEquals(new Status("OK"), c.call("XGROUP", "CREATE", "fid:stream", "g", "$", "MKSTREAM"));
+            assertError("BUSYGROUP ", c.call("XGROUP", "CREATE", "fid:stream", "g", "$"));
+            assertError("NOGROUP ", c.call("XREADGROUP", "GROUP", "nosuchgroup", "c", "STREAMS", "fid:stream", ">"));
+            assertError("NOTBUSY ", c.call("SCRIPT", "KILL"));
+        }
+    }
+
+    /** [upstream:G7] RESP3 verbatim text arrives from Glide as a String; RESP2 sends a bulk string. */
+    @Test
+    void verbatimTextRepliesAreBulkStrings() throws Exception {
+        try (RawRespClient c = connect()) {
+            // LOLWUT is passed through, and its RESP3 reply is a verbatim string.
+            Object art = c.call("LOLWUT");
+            assertInstanceOf(String.class, art, () -> "LOLWUT should be a bulk string, got " + art);
+            assertTrue(((String) art).contains("\n") && ((String) art).contains("ver."), () -> "LOLWUT: " + art);
+        }
+    }
+
+    /** [upstream:G7] COMMAND DOCS argument flags are statuses; redis-cli asserts on it. */
+    @Test
+    void commandDocsFlagsAreStatuses() throws Exception {
+        try (RawRespClient c = connect()) {
+            Object docs = c.call("COMMAND", "DOCS", "SET");
+            List<Object> flags = new java.util.ArrayList<>();
+            collectFlagValues(docs, flags);
+            assertFalse(flags.isEmpty(), "SET's arguments have flags: " + docs);
+            assertTrue(flags.stream().allMatch(f -> f instanceof Status), "flags must be statuses: " + flags);
+            assertTrue(flags.contains(new Status("optional")), "flags: " + flags);
+        }
+    }
+
+    /** Collects the values following each "flags" key in a COMMAND DOCS reply. */
+    private static void collectFlagValues(Object reply, List<Object> out) {
+        if (reply instanceof List<?> list) {
+            for (int i = 0; i < list.size(); i++) {
+                Object item = list.get(i);
+                if ("flags".equals(item) && i + 1 < list.size() && list.get(i + 1) instanceof List<?> values) {
+                    out.addAll(values);
+                }
+                collectFlagValues(item, out);
+            }
         }
     }
 }

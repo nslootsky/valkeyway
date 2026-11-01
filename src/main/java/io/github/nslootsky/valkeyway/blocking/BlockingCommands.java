@@ -15,6 +15,8 @@ import java.util.Optional;
  * <p>Such commands must not be sent over Glide's shared, multiplexed connection: the server stops
  * serving a connection while one of its commands is blocked, so every other client's commands to
  * that node would wait (and time out) behind it.
+ *
+ * <p>Relies on upstream behavior: [upstream:V5] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public final class BlockingCommands {
 

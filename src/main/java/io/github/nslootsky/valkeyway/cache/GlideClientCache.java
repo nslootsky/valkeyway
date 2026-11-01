@@ -35,6 +35,8 @@ import java.util.concurrent.TimeUnit;
  * configured {@code proxy.cluster-nodes}, passed to Glide as given so hostnames are resolved by DNS
  * each time. If none of them can be reached, for example because every node they named has since
  * been replaced, the client is created from the nodes a live client currently knows.
+ *
+ * <p>Relies on upstream behavior: [upstream:G8] [upstream:V3] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 @Component
 public class GlideClientCache {
@@ -57,6 +59,7 @@ public class GlideClientCache {
         this.topologyCheckSeconds = props.glide().topologyCheckSeconds();
     }
 
+    // [upstream:G8]
     GlideClusterClientConfiguration buildConfig(int db, List<String> seeds) {
         var builder = GlideClusterClientConfiguration.builder()
                 .requestTimeout(requestTimeout)
@@ -140,7 +143,7 @@ public class GlideClientCache {
         return List.of();
     }
 
-    /** host:port of the connected, non-failing nodes in a CLUSTER NODES reply. */
+    /** host:port of the connected, non-failing nodes in a CLUSTER NODES reply. [upstream:V3] */
     static List<String> parseClusterNodes(String reply) {
         List<String> nodes = new ArrayList<>();
         for (String line : reply.split("\n")) {

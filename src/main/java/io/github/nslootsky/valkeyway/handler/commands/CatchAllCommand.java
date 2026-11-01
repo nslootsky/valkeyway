@@ -47,6 +47,8 @@ import java.util.concurrent.Executors;
  *
  * <p>Most commands start asynchronously on the network thread (see {@link #canRunAsync}), so a
  * connection can pipeline them. The rest run through {@link #execute} on a virtual thread.
+ *
+ * <p>Relies on upstream behavior: [upstream:G3] [upstream:G4] [upstream:G5] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public class CatchAllCommand implements AsyncCommandHandler {
 
@@ -148,7 +150,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
                             : results == null || i >= results.length ? Reply.error("ERR missing reply in batch")
                             : GlideReplies.toReply(Resp2Shapes.shape(p.args(), results[i]));
                     if (error == null && reply instanceof Reply.Error e && ServerErrors.rejectedWithoutRunning(e)) {
-                        // Glide retries these for a single command but not inside a batch. Each command
+                        // [upstream:G3] Glide retries these for a single command but not inside a batch. Each command
                         // here is the only one its connection has in flight, so resending it alone
                         // can't reorder it against that connection's other commands.
                         sendOne(client, p, loop);
@@ -211,7 +213,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
     }
 
     /**
-     * A pipeline: one non-atomic ClusterBatch, which Glide executes in order per node (separately
+     * [upstream:G4] A pipeline: one non-atomic ClusterBatch, which Glide executes in order per node (separately
      * submitted commands can be reordered). Batch results don't go through Glide's ClusterValue, so
      * map replies keep their order and bytes without explicit routing.
      */
@@ -389,7 +391,36 @@ public class CatchAllCommand implements AsyncCommandHandler {
      * for reply integrity. Everything else, and keyless or multi-slot commands, keep Glide's own
      * routing (fan-out, splitting, aggregation), which is also Glide's faster path.
      */
+    /**
+     * Sends one command. If Glide returns a redirect instead of following it, the command is resent
+     * as a one-command batch. [upstream:G10] For single commands to a migrating slot under concurrent
+     * traffic, Glide often fails to follow ASK and returns the importing node's MOVED; inside a batch
+     * it follows ASK reliably. The node rejected the command without running it, so resending is safe.
+     */
     private CompletableFuture<ClusterValue<Object>> send(GlideClusterClient client, byte[][] args) {
+        return sendOnce(client, args).exceptionallyCompose(e -> ServerErrors.isUnfollowedRedirect(e)
+                ? sendAsBatch(client, args)
+                : CompletableFuture.failedFuture(e));
+    }
+
+    private static CompletableFuture<ClusterValue<Object>> sendAsBatch(GlideClusterClient client, byte[][] args) {
+        GlideString[] glideArgs = new GlideString[args.length];
+        for (int i = 0; i < args.length; i++) {
+            glideArgs[i] = GlideString.of(args[i]);
+        }
+        ClusterBatch batch = new ClusterBatch(false).withBinaryOutput();
+        batch.customCommand(glideArgs);
+        return client.exec(batch, false).thenCompose(results -> {
+            Object result = results == null || results.length == 0 ? null : results[0];
+            // ofSingleValue, not of(): of() misreads map replies as multi-node results [upstream:G5].
+            return result instanceof Throwable failure
+                    ? CompletableFuture.<ClusterValue<Object>>failedFuture(failure)
+                    : CompletableFuture.completedFuture(ClusterValue.ofSingleValue(result));
+        });
+    }
+
+    // [upstream:G5] map-reply commands need an explicit route.
+    private CompletableFuture<ClusterValue<Object>> sendOnce(GlideClusterClient client, byte[][] args) {
         GlideString[] glideArgs = new GlideString[args.length];
         for (int i = 0; i < args.length; i++) {
             glideArgs[i] = GlideString.of(args[i]);

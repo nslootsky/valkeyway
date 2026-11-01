@@ -27,6 +27,8 @@ import java.util.Set;
  * (CLIENT LIST, CLUSTER INFO, ...) also arrive as {@code String} and are bulk strings in RESP2.
  * Strings nested inside a reply come from Glide's per-command conversions (e.g. LCS IDX map keys)
  * and were bulk strings on the wire.
+ *
+ * <p>Relies on upstream behavior: [upstream:G7] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public final class GlideReplies {
 

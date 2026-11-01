@@ -27,6 +27,8 @@ import java.util.concurrent.TimeUnit;
  * <p>The command table is loaded once from the cluster. Commands with fixed key positions
  * (first/last/step) are resolved locally; commands with movable keys (EVAL, ZUNIONSTORE,
  * XREAD, ...) or unknown to the table fall back to {@code COMMAND GETKEYS}.
+ *
+ * <p>Relies on upstream behavior: [upstream:V4] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public class CommandKeyExtractor {
 

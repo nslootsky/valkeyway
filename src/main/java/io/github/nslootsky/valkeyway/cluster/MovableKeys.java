@@ -13,6 +13,8 @@ import java.util.List;
  * Key positions for common "movable keys" commands, whose keys depend on their arguments
  * (a numkeys count, a STREAMS marker, ...). Parsing them locally keeps COMMAND GETKEYS
  * round trips off the hot path.
+ *
+ * <p>Relies on upstream behavior: [upstream:V4] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 final class MovableKeys {
 

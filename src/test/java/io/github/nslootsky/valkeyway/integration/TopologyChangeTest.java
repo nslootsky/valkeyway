@@ -93,10 +93,15 @@ class TopologyChangeTest {
                 assertEquals(List.of("m", "s", OK, "n"), proxy.pipeline(List.of(
                         cmd("GET", moved), cmd("GET", stays), cmd("SET", created, "n"), cmd("GET", created))),
                         "pipeline; the new key is created on the importing node");
-                assertEquals(List.of(), concurrently(CLIENTS, (id, c, problems) -> {
-                    expect(problems, id + " GET moved", "m", c.call("GET", moved));
-                    expect(problems, id + " GET stays", "s", c.call("GET", stays));
-                }), "coalesced single commands");
+                // [upstream:G10] Many rounds: Glide's failures to follow ASK are intermittent.
+                List<String> problems = new ArrayList<>();
+                for (int round = 0; round < 30; round++) {
+                    problems.addAll(concurrently(CLIENTS, (id, c, found) -> {
+                        expect(found, id + " GET moved", "m", c.call("GET", moved));
+                        expect(found, id + " GET stays", "s", c.call("GET", stays));
+                    }));
+                }
+                assertEquals(List.of(), problems, "single commands, coalesced or not");
             } finally {
                 nodes.finishMigration(slot, source, target);
             }
