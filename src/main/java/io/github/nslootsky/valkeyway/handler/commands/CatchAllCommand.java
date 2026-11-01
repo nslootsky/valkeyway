@@ -18,6 +18,8 @@ import io.github.nslootsky.valkeyway.blocking.BlockingCommands;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.cluster.ClusterSlots;
 import io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor;
+import io.github.nslootsky.valkeyway.cluster.MapReplyCommands;
+import io.github.nslootsky.valkeyway.cluster.SlotRoutes;
 import io.github.nslootsky.valkeyway.handler.SessionState;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
 import org.slf4j.Logger;
@@ -28,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -74,7 +77,7 @@ public class CatchAllCommand implements RespCommand {
             Optional<BlockingCommands.Spec> blocking = BlockingCommands.detect(rawArgs);
             RedisToken result = blocking.isPresent()
                     ? handleBlockingCommand(session, rawArgs, blocking.get())
-                    : handleCustomCommand(request);
+                    : handleCustomCommand(session, rawArgs);
             if (result.getType().name().equals("ERROR")) {
                 metrics.recordError();
             }
@@ -100,7 +103,7 @@ public class CatchAllCommand implements RespCommand {
         if (args.size() >= 2 && args.get(1).equalsIgnoreCase("ID")) {
             return RedisToken.integer((int) (System.currentTimeMillis() % 1000000));
         }
-        return handleCustomCommand(request);
+        return handleCustomCommand(request.getSession(), toBytes(request));
     }
 
     private List<String> toArgs(Request request) {
@@ -110,15 +113,6 @@ public class CatchAllCommand implements RespCommand {
             args.add(param.toString());
         }
         return args;
-    }
-
-    private GlideString[] toGlideArgs(Request request) {
-        List<GlideString> args = new ArrayList<>();
-        args.add(GlideString.of(request.getCommand()));
-        for (var param : request.getParams()) {
-            args.add(GlideString.of(param.getBytes()));
-        }
-        return args.toArray(new GlideString[0]);
     }
 
     private void queueTransactionCommand(Session session, Request request) {
@@ -138,20 +132,39 @@ public class CatchAllCommand implements RespCommand {
         SessionState.setTransactionCommands(session, commands);
     }
 
-    private RedisToken handleCustomCommand(Request request) {
+    private RedisToken handleCustomCommand(Session session, byte[][] args) {
         try {
-            GlideClusterClient client = SessionState.getOrCreateGlideClient(request.getSession(), glideClientCache);
-            GlideString[] cmdArgs = toGlideArgs(request);
-            ClusterValue<Object> result = client.customCommand(cmdArgs).get();
+            GlideClusterClient client = SessionState.getOrCreateGlideClient(session, glideClientCache);
+            ClusterValue<Object> result = send(client, args).get();
             if (log.isDebugEnabled()) {
                 log.debug("OK {} result={}, hasSingle={}, hasMulti={}",
-                        request.getCommand(), TokenUtils.summarize(result), result.hasSingleData(), result.hasMultiData());
+                        new String(args[0], StandardCharsets.US_ASCII), TokenUtils.summarize(result),
+                        result.hasSingleData(), result.hasMultiData());
             }
             return TokenUtils.toRedisToken(result);
         } catch (Exception e) {
-            log.error("ERR {} error={}", request.getCommand(), e.getMessage());
+            log.error("ERR {} error={}", new String(args[0], StandardCharsets.US_ASCII), e.getMessage());
             return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
         }
+    }
+
+    /**
+     * Sends a command. Commands that can return a top-level map are routed explicitly to their
+     * slot's primary when all their keys share a slot; see {@link SlotRoutes} for why that matters
+     * for reply integrity. Everything else, and keyless or multi-slot commands, keep Glide's own
+     * routing (fan-out, splitting, aggregation), which is also Glide's faster path.
+     */
+    private CompletableFuture<ClusterValue<Object>> send(GlideClusterClient client, byte[][] args) {
+        GlideString[] glideArgs = new GlideString[args.length];
+        for (int i = 0; i < args.length; i++) {
+            glideArgs[i] = GlideString.of(args[i]);
+        }
+        int slot = MapReplyCommands.mayReturnMap(args)
+                ? keyExtractor.singleSlot(client, args)
+                : CommandKeyExtractor.NO_SLOT;
+        return slot == CommandKeyExtractor.NO_SLOT
+                ? client.customCommand(glideArgs)
+                : client.customCommand(glideArgs, SlotRoutes.primary(slot));
     }
 
     /**
@@ -170,11 +183,7 @@ public class CatchAllCommand implements RespCommand {
         try {
             long waitedMillis = (System.nanoTime() - start) / 1_000_000;
             byte[][] effective = spec.withRemainingTimeout(args, waitedMillis);
-            GlideString[] cmdArgs = new GlideString[effective.length];
-            for (int i = 0; i < effective.length; i++) {
-                cmdArgs[i] = GlideString.of(effective[i]);
-            }
-            return TokenUtils.toRedisToken(lease.resource().customCommand(cmdArgs).get());
+            return TokenUtils.toRedisToken(send(lease.resource(), effective).get());
         } catch (ExecutionException e) {
             // A server error leaves the connection usable. Anything else (timeout, connection loss)
             // may leave the blocking command pending on it, so don't hand it to the next caller.

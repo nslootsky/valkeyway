@@ -69,4 +69,85 @@ class CommandKeyExtractorTest {
         assertNotNull(encoding);
         assertEquals(List.of("foo"), keys(encoding, "OBJECT", "ENCODING", "foo"));
     }
+
+    // --- singleSlot: what the proxy routes explicitly ---
+
+    private static final Map<String, KeySpec> TABLE = Map.of(
+            "get", new KeySpec(1, 1, 1, false, Map.of()),
+            "mget", new KeySpec(1, -1, 1, false, Map.of()),
+            "ping", new KeySpec(0, 0, 0, false, Map.of()),
+            "eval", new KeySpec(0, 0, 0, true, Map.of()),
+            "xread", new KeySpec(0, 0, 0, true, Map.of()),
+            "zunionstore", new KeySpec(1, 1, 1, true, Map.of()),
+            "migrate", new KeySpec(0, 0, 0, true, Map.of()),
+            "object", new KeySpec(0, 0, 0, false, Map.of("object|encoding", new KeySpec(2, 2, 1, false, Map.of()))));
+
+    private static int slot(String... parts) {
+        return new CommandKeyExtractor(TABLE).singleSlot(null, args(parts));
+    }
+
+    private static int slotOf(String key) {
+        return ClusterSlots.slot(key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void singleKeyCommandRoutesToItsSlot() {
+        assertEquals(slotOf("foo"), slot("GET", "foo"));
+    }
+
+    @Test
+    void multiKeyCommandRoutesOnlyWhenAllKeysShareASlot() {
+        assertEquals(slotOf("{u}a"), slot("MGET", "{u}a", "{u}b", "{u}c"));
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("MGET", "foo", "bar"), "Glide splits these itself");
+    }
+
+    @Test
+    void keylessAndUnknownCommandsAreNotRouted() {
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("PING", "hello"));
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("NOSUCHCMD", "foo"));
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("GET"));
+    }
+
+    @Test
+    void subcommandKeysAreUsed() {
+        assertEquals(slotOf("foo"), slot("OBJECT", "ENCODING", "foo"));
+    }
+
+    @Test
+    void movableKeysAreParsedLocally() {
+        assertEquals(slotOf("{t}a"), slot("EVAL", "return 1", "2", "{t}a", "{t}b", "argv1"));
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("EVAL", "return 1", "0"), "no keys: any node");
+        assertEquals(slotOf("{s}1"), slot("XREAD", "COUNT", "5", "STREAMS", "{s}1", "{s}2", "0", "0"));
+        assertEquals(slotOf("{z}dst"), slot("ZUNIONSTORE", "{z}dst", "2", "{z}a", "{z}b", "WEIGHTS", "1", "2"));
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("ZUNIONSTORE", "{z}dst", "2", "{z}a", "other"));
+    }
+
+    @Test
+    void unparseableMovableKeysFallBackToGlideRouting() {
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("EVAL", "return 1", "notanumber", "k"));
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("EVAL", "return 1", "5", "k"), "numkeys beyond args");
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("MIGRATE", "host", "6379", "k", "0", "1000"), "not parsed locally");
+        assertEquals(CommandKeyExtractor.NO_SLOT, slot("XREAD", "STREAMS", "a", "b", "c"), "odd stream/id count");
+    }
+
+    @Test
+    void movableKeyParserCoversCommonCommands() {
+        assertEquals(List.of("a", "b"), parse("evalsha", "sha", "2", "a", "b", "x"));
+        assertEquals(List.of("a", "b"), parse("fcall", "fn", "2", "a", "b"));
+        assertEquals(List.of("a", "b"), parse("zunion", "2", "a", "b", "WITHSCORES"));
+        assertEquals(List.of("a"), parse("lmpop", "1", "a", "LEFT"));
+        assertEquals(List.of("a", "b"), parse("blmpop", "0.5", "2", "a", "b", "LEFT"));
+        assertEquals(List.of("s1", "s2"), parse("xreadgroup", "GROUP", "g", "c", "STREAMS", "s1", "s2", ">", ">"));
+        assertEquals(List.of("src", "dst"), parse("sort", "src", "BY", "w_*", "STORE", "dst"));
+        assertEquals(List.of("g", "out"), parse("georadius", "g", "15", "37", "200", "km", "STOREDIST", "out"));
+        assertNull(parse("migrate", "h", "1", "k", "0", "1"));
+    }
+
+    private static List<String> parse(String name, String... rest) {
+        String[] all = new String[rest.length + 1];
+        all[0] = name.toUpperCase();
+        System.arraycopy(rest, 0, all, 1, rest.length);
+        List<byte[]> keys = MovableKeys.parse(name, args(all));
+        return keys == null ? null : keys.stream().map(b -> new String(b, StandardCharsets.UTF_8)).toList();
+    }
 }

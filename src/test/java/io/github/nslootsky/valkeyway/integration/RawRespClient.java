@@ -19,6 +19,9 @@ import java.util.List;
  * Minimal RESP2 client that exposes reply types exactly as they arrive on the wire,
  * so tests can check what plain (non-Glide) clients see.
  *
+ * <p>Strings are byte strings: arguments and replies are converted with ISO-8859-1, which maps each
+ * byte to one char, so binary data round-trips exactly (write {@code "\u00ff"} to send byte 0xFF).
+ *
  * <p>Replies map to: {@code +status} → {@link Status}, {@code -error} → {@link Error},
  * {@code :n} → {@link Long}, {@code $bulk} → {@link String}, {@code *array} → {@link List},
  * null bulk/array → {@code null}.
@@ -42,12 +45,12 @@ public class RawRespClient implements AutoCloseable {
 
     public Object call(String... args) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        buf.writeBytes(("*" + args.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+        buf.writeBytes(("*" + args.length + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
         for (String arg : args) {
-            byte[] bytes = arg.getBytes(StandardCharsets.UTF_8);
-            buf.writeBytes(("$" + bytes.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+            byte[] bytes = arg.getBytes(StandardCharsets.ISO_8859_1);
+            buf.writeBytes(("$" + bytes.length + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
             buf.writeBytes(bytes);
-            buf.writeBytes("\r\n".getBytes(StandardCharsets.UTF_8));
+            buf.writeBytes("\r\n".getBytes(StandardCharsets.ISO_8859_1));
         }
         out.write(buf.toByteArray());
         out.flush();
@@ -68,7 +71,7 @@ public class RawRespClient implements AutoCloseable {
                 }
                 byte[] data = in.readNBytes(len);
                 readLine();
-                yield new String(data, StandardCharsets.UTF_8);
+                yield new String(data, StandardCharsets.ISO_8859_1);
             }
             case '*' -> {
                 int len = Integer.parseInt(line);
@@ -95,7 +98,7 @@ public class RawRespClient implements AutoCloseable {
             line.write(b);
         }
         in.read(); // '\n'
-        return line.toString(StandardCharsets.UTF_8);
+        return line.toString(StandardCharsets.ISO_8859_1);
     }
 
     @Override
