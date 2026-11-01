@@ -102,6 +102,7 @@ public final class RespDecoder extends ByteToMessageDecoder {
             }
             return false;
         }
+        checkLf(in, eol);
         long count = parseLong(in, start + 1, eol, "invalid multibulk length");
         in.readerIndex(eol + 2);
         if (count > MAX_ARGS) {
@@ -158,6 +159,7 @@ public final class RespDecoder extends ByteToMessageDecoder {
                     }
                     return false;
                 }
+                checkLf(in, eol);
                 long length = parseLong(in, start + 1, eol, "invalid bulk length");
                 if (length < 0 || length > MAX_BULK) {
                     throw new ProtocolException("invalid bulk length");
@@ -174,7 +176,7 @@ public final class RespDecoder extends ByteToMessageDecoder {
             byte[] value = new byte[bulkLength];
             in.readBytes(value);
             if (in.readByte() != '\r' || in.readByte() != '\n') {
-                throw new ProtocolException("bulk string not terminated by CRLF");
+                throw new ProtocolException("invalid CRLF in request");
             }
             args[argIndex++] = value;
             bulkLength = -1;
@@ -184,11 +186,18 @@ public final class RespDecoder extends ByteToMessageDecoder {
 
     /**
      * Index of the CR ending a header line that starts at {@code start}, or -1 until both the CR and
-     * the byte after it (the LF) have arrived. Like Valkey, the LF itself isn't checked.
+     * the byte after it (the LF) have arrived.
      */
     private static int lineEnd(ByteBuf in, int start) {
         int cr = in.indexOf(start, in.writerIndex(), (byte) '\r');
         return cr >= 0 && cr + 1 < in.writerIndex() ? cr : -1;
+    }
+
+    /** Valkey 9 requires the CR ending a header line to be followed by LF. [upstream:V11] */
+    private static void checkLf(ByteBuf in, int cr) {
+        if (in.getByte(cr + 1) != '\n') {
+            throw new ProtocolException("invalid CRLF in request");
+        }
     }
 
     private static long parseLong(ByteBuf in, int from, int to, String error) {

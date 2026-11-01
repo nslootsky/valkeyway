@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import io.github.nslootsky.valkeyway.transaction.Transaction;
 import glide.api.GlideClusterClient;
 import glide.api.models.ClusterBatch;
+import glide.api.models.commands.batch.ClusterBatchOptions;
+import io.github.nslootsky.valkeyway.backend.routing.SlotRoutes;
 import io.github.nslootsky.valkeyway.ValkeywayProperties.CrossSlot;
 import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.backend.GlideArgs;
@@ -102,13 +104,20 @@ public class ExecCommand implements CommandHandler {
             // An empty EXEC still reports whether a watched key changed; run a harmless command on
             // the watched slot so the batch goes to the node holding the watches.
             buffered = List.<byte[][]>of(new byte[][]{"EXISTS".getBytes(StandardCharsets.US_ASCII), watch.firstKey()});
-            Reply reply = run(connection, buffered, false, watch);
+            Reply reply = run(connection, buffered, false, watch, slots);
             return reply instanceof Reply.Array ? Reply.EMPTY_ARRAY : reply;
         }
-        return run(connection, buffered, crossSlot, watch);
+        return run(connection, buffered, crossSlot, watch, slots);
     }
 
-    private Reply run(Connection connection, List<byte[][]> buffered, boolean crossSlot, WatchSession watch) {
+    /**
+     * @param slots the slots of the queued and watched keys; with exactly one, the batch is sent to
+     *        that slot's node. That's what makes a WATCH count for a transaction of keyless commands
+     *        (MULTI, PING, EXEC): without a route, Glide sends it to any node, which knows nothing of
+     *        the watch.
+     */
+    private Reply run(Connection connection, List<byte[][]> buffered, boolean crossSlot, WatchSession watch,
+                      Set<Integer> slots) {
         boolean completed = false;
         try {
             GlideClusterClient client = watch != null ? watch.client() : backendClients.getClient(connection.db());
@@ -120,7 +129,10 @@ public class ExecCommand implements CommandHandler {
             log.debug("EXEC {} commands crossSlot={} watched={}", buffered.size(), crossSlot, watch != null);
             // raiseOnError=false: a failing command yields an error element in the reply array,
             // matching Valkey's EXEC semantics, instead of failing the whole reply.
-            Object[] results = client.exec(batch, false).get();
+            Object[] results = slots.size() == 1
+                    ? client.exec(batch, false, ClusterBatchOptions.builder()
+                            .route(SlotRoutes.primary(slots.iterator().next())).build()).get()
+                    : client.exec(batch, false).get();
             completed = true;
             if (results == null) {
                 log.debug("EXEC aborted (WATCH)");

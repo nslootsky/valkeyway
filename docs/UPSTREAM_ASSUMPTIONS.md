@@ -165,6 +165,13 @@ The proxy subscribes through Glide's dynamic Pub/Sub API (`subscribe`, `psubscri
 - **Code:** `PubSubHub`, `PubSubCommand`.
 - **Live test:** `PubSubTest` (messages, patterns and shard messages; messages published on a node).
 
+### G15: Glide routes commands it doesn't know by their first argument
+
+For a command without a rule in its routing table, Glide takes the first argument as the key (`redis-rs/cluster_routing.rs`, `base_routing`: `_ => RouteBy::FirstKey`). For a command whose first key comes later, that's the wrong slot. The proxy derives the affected commands from the COMMAND table (first key not argument 1, minus those Glide has a rule for: EVAL, FCALL, LMPOP, ZUNION, XREAD, MIGRATE, BITOP, ...) and routes them to their keys' slot itself, outside batches, which can't route individual commands. With Valkey 9.1 that's only MSETEX, and it matters more than an extra MOVED hop: Valkey 9.1.1 nodes run MSETEX for keys of slots they don't own, storing them where no read finds them.
+
+- **Code:** `GlideRouting`, `Backend.sendOnce`, `CatchAllCommand.canRunAsync`.
+- **Live test:** `MsetexRoutingTest`.
+
 ---
 
 ## Valkey
@@ -245,7 +252,30 @@ RESET switches back to the default user, so with a password the connection must 
 
 ### V8: Pub/Sub replies and subscribed mode
 
-A (P|S)SUBSCRIBE confirms each name with `[subscribe, name, count]` (a push in RESP3), where the count is the client's channels plus patterns, or for SSUBSCRIBE its shard channels. An UNSUBSCRIBE with nothing to unsubscribe answers `[unsubscribe, nil, count]`. A RESP2 client with subscriptions may only run (P|S)SUBSCRIBE, (P|S)UNSUBSCRIBE, PING, QUIT and RESET; anything else gets `ERR Can't execute '<command>': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`, and PING answers `[pong, message]`. Messages are `[message, channel, payload]`, `[pmessage, pattern, channel, payload]` and `[smessage, channel, payload]`. RESET drops every subscription.
+A (P|S)SUBSCRIBE confirms each name with `[subscribe, name, count]` (a push in RESP3), where the count is the client's channels plus patterns, or for SSUBSCRIBE its shard channels. An UNSUBSCRIBE with nothing to unsubscribe answers `[unsubscribe, nil, count]`. A RESP2 client with subscriptions may only run (P|S)SUBSCRIBE, (P|S)UNSUBSCRIBE, PING, QUIT and RESET; anything else gets `ERR Can't execute '<command>': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`, and PING answers `[pong, message]`. Messages are `[message, channel, payload]`, `[pmessage, pattern, channel, payload]` and `[smessage, channel, payload]`. RESET drops every subscription. Confirmations and messages are sent even with CLIENT REPLY OFF (Valkey sends all pushes regardless).
 
-- **Code:** `PubSubCommand`, `PubSubSession`, `CommandTable` (subscribed-mode error), `PingCommand`.
+- **Code:** `PubSubCommand`, `PubSubSession`, `CommandTable` (subscribed-mode error), `PingCommand`, `Connection.isPush` (CLIENT REPLY OFF).
 - **Live test:** `PubSubTest.confirmationsAndErrorsMatchAServer` and `confirmationsMatchAServerInResp3` (proxy and node compared frame by frame).
+
+### V9: Blocking commands' argument errors
+
+Valkey checks a blocking command's timeout in `getTimeoutFromObjectOrReply` (timeout.c): seconds (BLPOP & co.) must parse as a long double, hexadecimal included as `strtold` reads it (`ERR timeout is not a float or out of range`), be at most LLONG_MAX milliseconds once added to the current time (`ERR timeout is out of range`, also for `inf`), and not be negative (`ERR timeout is negative`); milliseconds (XREAD BLOCK, WAIT, WAITAOF) must be a long long (`ERR timeout is not an integer or out of range`). Glide parses blocking commands' timeouts itself and rejects bad ones (or a missing one) with its own text, so the proxy checks arity (from the COMMAND table) and the timeout first, with Valkey's words.
+
+CLIENT UNBLOCK is passed on to the node as `CLIENT UNBLOCK <id> TIMEOUT|ERROR` for the pooled backend connection the command waits on (its ID from CLIENT ID on that connection), so the node ends the command and answers it: the command's timeout reply, or `UNBLOCKED client unblocked via CLIENT UNBLOCK`. Closing the connection instead isn't enough: until the node notices, the command still waits there, and the next element pushed to the key goes to it.
+
+- **Code:** `BlockingCommands.seconds`/`millis`, `CatchAllCommand.execute`, `BlockingCommandRunner` (`Waiter`).
+- **Live test:** `DifferentialRepliesTest` (bad timeouts, compared with a node), `BlockingCommandsTest`.
+
+### V10: INFO fields that clients and tools read
+
+Valkey's test suite and monitoring tools read INFO fields by name: `blocked_clients` (how the suite waits for a client to block), `connected_clients`, `expired_keys`, `total_error_replies`, the `dbN:keys=..,expires=..,avg_ttl=..` keyspace lines, and `role`/`redis_mode`, which clients use to detect a standalone server. The proxy answers clients, replication and cluster from its own state, sums stats and keyspace over the primaries, and takes the other sections from one primary.
+
+- **Code:** `InfoCommand`.
+- **Live test:** `InfoTest`.
+
+### V11: Request parsing (Valkey 9)
+
+Inline commands are split by `sdssplitargs` (`sdsparsearg` in sds.c). Since Valkey 9 a closing quote ends the quoted part but not the argument, so `"test"'-'value` is the single argument `test-value`; older servers required whitespace after a closing quote. A quote left open, or a NUL byte inside quotes, is `ERR Protocol error: unbalanced quotes in request`. Valkey 9 also checks RESP requests strictly: every CR ending a header line must be followed by LF, and every argument by CRLF, or it answers `ERR Protocol error: invalid CRLF in request` (`processMultibulkBuffer` in networking.c).
+
+- **Code:** `InlineArgs`, `RespDecoder.checkLf`.
+- **Live test:** `RespDecoderTest.quotedAndUnquotedPartsJoinUp` and `requiresLfAfterEveryCr` (Valkey's own cases), `RespFidelityTest.inlineQuotingMatchesAServer` (compared with a node).

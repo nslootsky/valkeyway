@@ -81,6 +81,12 @@ public class RawRespClient implements AutoCloseable {
         return read();
     }
 
+    /** Writes {@code text} as is (inline commands, malformed input). */
+    public void writeRaw(String text) throws IOException {
+        out.write(text.getBytes(StandardCharsets.ISO_8859_1));
+        out.flush();
+    }
+
     /** Reads one reply (or pushed message) without sending anything. */
     public Object readReply() throws IOException {
         return read();

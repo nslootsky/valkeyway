@@ -104,6 +104,24 @@ class PubSubTest extends IntegrationTestBase {
         }
     }
 
+    /** PUBLISH counts the proxy's receivers, as a standalone server counts its subscribers. */
+    @Test
+    void publishCountsReceivers() throws Exception {
+        try (RawRespClient a = proxy(); RawRespClient b = proxy(); RawRespClient pub = proxy()) {
+            assertEquals(0L, pub.call("PUBLISH", "ps:count", "x"));
+            a.call("SUBSCRIBE", "ps:count");
+            b.call("PSUBSCRIBE", "ps:cou*");
+            assertEquals(2L, pub.call("PUBLISH", "ps:count", "x"), "a channel and a matching pattern");
+            assertEquals(1L, pub.call("PUBLISH", "ps:counter", "x"), "only the pattern");
+            a.call("UNSUBSCRIBE");
+            assertEquals(1L, pub.call("PUBLISH", "ps:count", "x"), "an UNSUBSCRIBE takes effect at once");
+            try (RawRespClient c = proxy()) {
+                assertEquals(List.of("ssubscribe", "{ps}c", 1L), c.call("SSUBSCRIBE", "{ps}c"));
+                assertEquals(1L, pub.call("SPUBLISH", "{ps}c", "x"));
+            }
+        }
+    }
+
     @Test
     void messagesPublishedOnTheClusterArrive() throws Exception {
         try (RawRespClient sub = proxy(); RawRespClient direct = node("ps:anything")) {
@@ -183,6 +201,19 @@ class PubSubTest extends IntegrationTestBase {
 
             pub.call("PUBLISH", "ps:r3", "pushed");
             assertEquals(new Push(List.of("message", "ps:r3", "pushed")), next(c));
+        }
+    }
+
+    /** Valkey sends Pub/Sub confirmations and messages even with CLIENT REPLY OFF. */
+    @Test
+    void confirmationsAndMessagesIgnoreClientReplyOff() throws Exception {
+        try (RawRespClient c = proxy(); RawRespClient pub = proxy()) {
+            c.call("HELLO", "3");
+            c.send("CLIENT", "REPLY", "OFF");
+            assertEquals(new Push(List.of("subscribe", "ps:off", 1L)), c.call("SUBSCRIBE", "ps:off"));
+            pub.call("PUBLISH", "ps:off", "m");
+            assertEquals(new Push(List.of("message", "ps:off", "m")), next(c));
+            assertEquals(new Push(List.of("unsubscribe", "ps:off", 0L)), c.call("UNSUBSCRIBE", "ps:off"));
         }
     }
 

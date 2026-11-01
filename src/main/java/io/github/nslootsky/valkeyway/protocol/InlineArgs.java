@@ -11,8 +11,10 @@ import java.util.List;
 
 /**
  * Splits an inline command line ({@code PING}, {@code SET k "hello world"}) into arguments, following
- * Valkey's {@code sdssplitargs}: double quotes support {@code \n \r \t \b \a \\ \" \xHH} escapes,
- * single quotes only {@code \'}, and a closing quote must be followed by whitespace or the end.
+ * Valkey 9's {@code sdssplitargs} ({@code sdsparsearg}): double quotes support
+ * {@code \n \r \t \b \a \\ \" \xHH} escapes, single quotes only {@code \'}. A closing quote ends the
+ * quoted part, not the argument, so quoted and unquoted parts join up: {@code "a"'b'c} is {@code abc}.
+ * A quote left open (or a NUL byte inside quotes) is an error. [upstream:V11]
  */
 final class InlineArgs {
 
@@ -35,7 +37,7 @@ final class InlineArgs {
             ByteArrayOutputStream current = new ByteArrayOutputStream();
             while (!done) {
                 if (inDouble) {
-                    if (p >= n) {
+                    if (p >= n || line[p] == 0) {
                         throw unbalanced();
                     }
                     byte c = line[p];
@@ -54,15 +56,12 @@ final class InlineArgs {
                             default -> line[p];
                         });
                     } else if (c == '"') {
-                        if (p + 1 < n && !isSpace(line[p + 1])) {
-                            throw unbalanced();
-                        }
-                        done = true;
+                        inDouble = false;
                     } else {
                         current.write(c);
                     }
                 } else if (inSingle) {
-                    if (p >= n) {
+                    if (p >= n || line[p] == 0) {
                         throw unbalanced();
                     }
                     byte c = line[p];
@@ -70,10 +69,7 @@ final class InlineArgs {
                         p++;
                         current.write('\'');
                     } else if (c == '\'') {
-                        if (p + 1 < n && !isSpace(line[p + 1])) {
-                            throw unbalanced();
-                        }
-                        done = true;
+                        inSingle = false;
                     } else {
                         current.write(c);
                     }

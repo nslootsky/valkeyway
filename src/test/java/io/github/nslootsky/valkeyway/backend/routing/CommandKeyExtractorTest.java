@@ -167,6 +167,9 @@ class CommandKeyExtractorTest {
         assertEquals(List.of("a", "b"), parse("fcall", "fn", "2", "a", "b"));
         assertEquals(List.of("a", "b"), parse("zunion", "2", "a", "b", "WITHSCORES"));
         assertEquals(List.of("a"), parse("lmpop", "1", "a", "LEFT"));
+        assertEquals(List.of("a", "b"), parse("msetex", "2", "a", "1", "b", "2", "EX", "10"));
+        assertEquals(List.of("a"), parse("msetex", "1", "a", "1"));
+        assertNull(parse("msetex", "2", "a", "1", "b"), "a key without its value");
         assertEquals(List.of("a", "b"), parse("blmpop", "0.5", "2", "a", "b", "LEFT"));
         assertEquals(List.of("s1", "s2"), parse("xreadgroup", "GROUP", "g", "c", "STREAMS", "s1", "s2", ">", ">"));
         assertEquals(List.of("src", "dst"), parse("sort", "src", "BY", "w_*", "STORE", "dst"));

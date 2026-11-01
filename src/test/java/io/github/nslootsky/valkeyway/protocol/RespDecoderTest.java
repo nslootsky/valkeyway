@@ -104,12 +104,21 @@ class RespDecoderTest {
         assertEquals(List.of(List.of("SET", "k", "")), decode("SET k \"\"\r\n"));
     }
 
+    /** Valkey 9: a closing quote ends the quoted part, not the argument (Valkey's "Mixing quoted and unquoted strings"). */
+    @Test
+    void quotedAndUnquotedPartsJoinUp() {
+        assertEquals(List.of(List.of("set", "test-key", "test-value")),
+                decode("set \"\"\"tes\"t-'k'e\"y\" \"test\"'-'value\r\n"));
+        assertEquals(List.of(List.of("SET", "k", "xy")), decode("SET k \"x\"y\r\n"));
+        assertEquals(List.of(List.of("SET", "k", "ab")), decode("SET k 'a'b\r\n"));
+    }
+
     @Test
     void unbalancedInlineQuotesAreProtocolErrors() {
         String error = "ERR Protocol error: unbalanced quotes in request";
         assertEquals(error, protocolError("SET k \"unterminated\r\n"));
-        assertEquals(error, protocolError("SET k \"x\"y\r\n"));
-        assertEquals(error, protocolError("SET k 'a'b\r\n"));
+        assertEquals(error, protocolError("set foo 'b'a'r\r\n"));
+        assertEquals(error, protocolError("set foo \"b\"a\"r\r\n"));
     }
 
     @Test
@@ -153,7 +162,18 @@ class RespDecoderTest {
         assertEquals("ERR Protocol error: expected '$', got ':'", protocolError("*1\r\n:3\r\n"));
         assertEquals("ERR Protocol error: invalid bulk length", protocolError("*1\r\n$-5\r\n"));
         assertEquals("ERR Protocol error: invalid bulk length", protocolError("*1\r\n$999999999999\r\n"));
-        assertEquals("ERR Protocol error: bulk string not terminated by CRLF", protocolError("*1\r\n$1\r\nab\r\n"));
+        assertEquals("ERR Protocol error: invalid CRLF in request", protocolError("*1\r\n$1\r\nab\r\n"));
+    }
+
+    /** Valkey 9's "Check CRLF when parsing the querybuf": every CR must be followed by LF. */
+    @Test
+    void requiresLfAfterEveryCr() {
+        String error = "ERR Protocol error: invalid CRLF in request";
+        assertEquals("ERR Protocol error: invalid multibulk length", protocolError("*3x\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"));
+        assertEquals(error, protocolError("*3\rx$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"));
+        assertEquals("ERR Protocol error: invalid multibulk length", protocolError("*3xx$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"));
+        assertEquals(error, protocolError("*3\r\n$3\rxSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"));
+        assertEquals(error, protocolError("*3\r\n$3\r\nSETxx$3\r\nkey\r\n$5\r\nvalue\r\n"));
     }
 
     @Test

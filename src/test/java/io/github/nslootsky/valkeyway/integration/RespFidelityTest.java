@@ -174,6 +174,37 @@ class RespFidelityTest extends IntegrationTestBase {
         }
     }
 
+    /** [upstream:V11] Valkey 9's inline quoting: quoted and unquoted parts join up; an open quote is an error. */
+    @Test
+    void inlineQuotingMatchesAServer() throws Exception {
+        String[] node = cluster.getNodeAddress(0).split(":");
+        for (String input : new String[]{
+                "set \"\"\"tes\"t-'k'e\"y\" \"test\"'-'value\r\nget test-key\r\n",
+                "set foo 'b'a'r\r\nping\r\n",
+                "set foo \"b\"a\"r\r\nping\r\n",
+                // Valkey 9 checks that every CR is followed by LF
+                "*3\rx$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+                "*3\r\n$3\rxSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+                "*3\r\n$3\r\nSETx\n$3\r\nkey\r\n$5\r\nvalue\r\n"}) {
+            // test-key's slot may be on another node; compare against the node that owns it.
+            String owner;
+            try (DirectNodes nodes = new DirectNodes(cluster.getNodeAddresses())) {
+                owner = nodes.ownerOf("test-key");
+            }
+            String[] address = owner.split(":");
+            List<Object> expected;
+            List<Object> actual;
+            try (RawRespClient direct = new RawRespClient(address[0], Integer.parseInt(address[1]));
+                 RawRespClient proxy = connect()) {
+                direct.writeRaw(input);
+                proxy.writeRaw(input);
+                expected = direct.readUntilQuiet(300);
+                actual = proxy.readUntilQuiet(300);
+            }
+            assertEquals(expected, actual, input);
+        }
+    }
+
     /** [upstream:G7] COMMAND DOCS argument flags are statuses; redis-cli asserts on it. */
     @Test
     void commandDocsFlagsAreStatuses() throws Exception {

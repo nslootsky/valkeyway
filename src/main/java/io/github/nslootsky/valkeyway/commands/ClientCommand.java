@@ -37,8 +37,7 @@ import java.util.function.Predicate;
 public class ClientCommand implements CommandHandler {
 
     private static final Set<String> UNSUPPORTED = Set.of(
-            "pause", "unpause", "tracking", "caching", "getredir", "trackinginfo", "unblock", "capa",
-            "import-source");
+            "pause", "unpause", "tracking", "caching", "getredir", "trackinginfo", "capa");
 
     private final WatchSessions watches;
 
@@ -72,6 +71,9 @@ public class ClientCommand implements CommandHandler {
             case "reply" -> n == 2 ? reply(connection, request.argString(1)) : arity(sub);
             case "no-evict" -> n == 2 ? flag(request.argString(1), connection::noEvict) : arity(sub);
             case "no-touch" -> n == 2 ? flag(request.argString(1), connection::noTouch) : arity(sub);
+            case "unblock" -> n == 2 || n == 3 ? unblock(request) : arity(sub);
+            // As on a server with import-mode off (the proxy has no import mode).
+            case "import-source" -> n == 2 ? Reply.error("ERR Server is not in import mode") : arity(sub);
             case "help" -> help();
             default -> UNSUPPORTED.contains(sub)
                     ? Reply.error("ERR CLIENT " + sub.toUpperCase(Locale.ROOT) + " is not supported by this proxy")
@@ -137,6 +139,23 @@ public class ClientCommand implements CommandHandler {
             }
         }
         return Reply.OK;
+    }
+
+    /** CLIENT UNBLOCK client-id [TIMEOUT|ERROR]: 1 if that client was in a blocking command. */
+    private static Reply unblock(Request request) {
+        long id;
+        try {
+            id = Long.parseLong(request.argString(1));
+        } catch (NumberFormatException e) {
+            return Reply.error("ERR value is not an integer or out of range");
+        }
+        String reason = request.argCount() == 3 ? request.argString(2).toLowerCase(Locale.ROOT) : "timeout";
+        if (!reason.equals("timeout") && !reason.equals("error")) {
+            return Reply.error("ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR");
+        }
+        boolean withError = reason.equals("error");
+        Connection target = request.connection().registry().find(id);
+        return Reply.integer(target != null && target.unblock(withError) ? 1 : 0);
     }
 
     // --- LIST / KILL ---
@@ -293,6 +312,9 @@ public class ClientCommand implements CommandHandler {
         }
         if (c.subscribed()) {
             flags.append('P');
+        }
+        if (c.blocked()) {
+            flags.append('b');
         }
         if (flags.isEmpty()) {
             flags.append('N');

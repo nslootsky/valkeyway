@@ -6,6 +6,8 @@
 package io.github.nslootsky.valkeyway.backend;
 
 import glide.api.GlideClusterClient;
+import glide.api.models.configuration.RequestRoutingConfiguration.SimpleSingleNodeRoute;
+import glide.api.models.exceptions.RequestException;
 import glide.api.models.ClusterBatch;
 import glide.api.models.ClusterValue;
 import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor;
@@ -106,7 +108,24 @@ public final class Backend {
     }
 
     private CompletableFuture<ClusterValue<Object>> sendOnce(GlideClusterClient client, byte[][] args) {
-        int slot = MapReplyCommands.mayReturnMap(args) ? keys.singleSlot(client, args) : CommandKeyExtractor.NO_SLOT;
+        boolean misrouted = keys.misroutedByGlide(args);
+        if (misrouted && keys.extractKeys(client, args).isEmpty()) {
+            // No keys to be found (a bad key count, ...): any node answers the argument error.
+            return client.customCommand(GlideArgs.of(args), SimpleSingleNodeRoute.RANDOM);
+        }
+        // Misrouted commands never run on the network thread (see CatchAllCommand.canRunAsync), so
+        // asking the server for their keys is allowed.
+        int slot = misrouted ? keys.singleSlotAsking(client, args)
+                : MapReplyCommands.mayReturnMap(args) ? keys.singleSlot(client, args) : CommandKeyExtractor.NO_SLOT;
+        if (misrouted && slot == CommandKeyExtractor.NO_SLOT) {
+            // Glide's own routing would pick a slot by the wrong argument. [upstream:G15] An
+            // argument error takes precedence, as on a node.
+            String invalid = keys.queueError(client, args);
+            if (invalid != null) {
+                return CompletableFuture.failedFuture(new RequestException(invalid));
+            }
+            return CompletableFuture.failedFuture(new RequestException("An error was signalled by the server: - CrossSlot: Keys in request don't hash to the same slot"));
+        }
         return slot == CommandKeyExtractor.NO_SLOT
                 ? client.customCommand(GlideArgs.of(args))
                 : client.customCommand(GlideArgs.of(args), SlotRoutes.primary(slot));

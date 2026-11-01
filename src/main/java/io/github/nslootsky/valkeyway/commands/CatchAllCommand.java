@@ -85,6 +85,10 @@ public class CatchAllCommand implements AsyncCommandHandler {
         if (clients.getIfPresent(connection.db()) == null) {
             return false;
         }
+        // A batch (pipeline, coalesced commands) can't route a command; Glide would misroute these. [upstream:G15]
+        if (keys.misroutedByGlide(args)) {
+            return false;
+        }
         return !MapReplyCommands.mayReturnMap(args) || keys.isLoaded();
     }
 
@@ -128,7 +132,15 @@ public class CatchAllCommand implements AsyncCommandHandler {
         }
         Optional<BlockingCommands.Spec> spec = BlockingCommands.detect(args);
         if (spec.isPresent()) {
-            return blocking.run(connection.db(), args, spec.get());
+            // Glide checks blocking commands' arguments itself, in its own words; answer as Valkey does. [upstream:V9]
+            String invalid = keys.queueError(clients.getClient(connection.db()), args);
+            if (invalid == null) {
+                invalid = spec.get().error();
+            }
+            if (invalid != null) {
+                return Reply.error(invalid);
+            }
+            return blocking.run(connection, args, keys.extractKeys(clients.getClient(connection.db()), args), spec.get());
         }
         return backend.callAndWait(clients.getClient(connection.db()), args);
     }

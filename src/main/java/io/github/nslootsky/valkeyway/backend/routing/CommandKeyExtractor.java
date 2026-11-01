@@ -54,6 +54,7 @@ public class CommandKeyExtractor {
     static final long RELOAD_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(60);
 
     private volatile Map<String, KeySpec> table;
+    private volatile GlideRouting misrouted = GlideRouting.of(GlideRouting.KNOWN);
     private final Function<GlideClusterClient, Map<String, KeySpec>> loader;
     private final LongSupplier clock;
     private long loadedAt;
@@ -99,6 +100,14 @@ public class CommandKeyExtractor {
     public static final int NO_SLOT = -1;
 
     /**
+     * Whether Glide would send {@code args} to the wrong node by its own routing (see
+     * {@link GlideRouting}); such commands must be routed to their keys' slot explicitly.
+     */
+    public boolean misroutedByGlide(byte[][] args) {
+        return misrouted.misroutes(args);
+    }
+
+    /**
      * Returns the key arguments of {@code args} (args[0] is the command name), asking the server
      * with COMMAND GETKEYS when they can't be found locally.
      */
@@ -120,6 +129,24 @@ public class CommandKeyExtractor {
         }
         List<byte[]> keys = localKeys(client, args);
         if (keys == null || keys.isEmpty()) {
+            return NO_SLOT;
+        }
+        int slot = ClusterSlots.slot(keys.getFirst());
+        for (int i = 1; i < keys.size(); i++) {
+            if (ClusterSlots.slot(keys.get(i)) != slot) {
+                return NO_SLOT;
+            }
+        }
+        return slot;
+    }
+
+    /**
+     * As {@link #singleSlot}, but asking the server (COMMAND GETKEYS) when the keys can't be found
+     * locally. May block: only for handlers running on a virtual thread.
+     */
+    public int singleSlotAsking(GlideClusterClient client, byte[][] args) {
+        List<byte[]> keys = extractKeys(client, args);
+        if (keys.isEmpty()) {
             return NO_SLOT;
         }
         int slot = ClusterSlots.slot(keys.getFirst());
@@ -262,6 +289,7 @@ public class CommandKeyExtractor {
             Map<String, KeySpec> loaded = loader.apply(client);
             int before = table == null ? 0 : table.size();
             table = loaded;
+            misrouted = GlideRouting.from(loaded);
             if (before != loaded.size()) {
                 log.info("Loaded key specs for {} commands", loaded.size());
             }
