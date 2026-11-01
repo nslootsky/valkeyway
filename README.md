@@ -249,7 +249,8 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - CLUSTER (standalone errors for INFO/NODES; others proxied)
 - COMMAND (all subcommands proxied; DOCS format adjusted for redis-cli)
 - PING, ECHO, TIME, QUIT (answered by the proxy)
-- PROXY (proxy administration; see Limitations)
+- CLIENT (ID, INFO, LIST, KILL, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), RESET, AUTH, READONLY/READWRITE: answered by the proxy from its own connections. Forwarded, they would act on backend connections that every client shares.
+- PROXY: STATS, CLIENTINFO <id>, CONFIG GET <name|*>, CLUSTER INFO, HELP
 - Blocking commands (BLPOP, BRPOP, BLMOVE, BZPOPMIN, XREAD/XREADGROUP BLOCK, WAIT, ...) run on dedicated backend clients
 
 ### All other commands (via customCommand)
@@ -278,16 +279,15 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 ## Limitations
 
 - RESP2 only (HELLO 3 is answered with protocol 2).
-- No TLS and no AUTH, neither for clients nor to the cluster.
-- Pub/Sub (SUBSCRIBE, PSUBSCRIBE, ...) is not supported.
+- No TLS and no client authentication: AUTH answers like a server without passwords. No credentials or TLS to the cluster either.
+- Pub/Sub subscriptions (SUBSCRIBE, PSUBSCRIBE, SSUBSCRIBE) and MONITOR are rejected. PUBLISH works.
+- CLIENT PAUSE, UNPAUSE, TRACKING (client-side caching), CACHING, GETREDIR, TRACKINGINFO and UNBLOCK are rejected. NO-EVICT and NO-TOUCH are accepted but only recorded. In CLIENT LIST, `cmd` is the last command's name, and buffer, memory and network fields are 0.
 - A transaction is atomic only when all its keys share a slot. A cross-slot transaction is rejected with CROSSSLOT by default; with `proxy.transactions.cross-slot=pipeline`, its commands run in order without any atomicity. With WATCH, a cross-slot transaction is always rejected.
 - Inside MULTI, INFO, HELLO, SCAN, CLUSTER, PROXY and SELECT are rejected and the transaction is discarded. The proxy answers the first five itself, which EXEC on a node can't reproduce, and SELECT would switch the database of the shared backend connection.
 - SELECT between WATCH and EXEC makes EXEC abort, as if a watched key had changed (clients retry).
 - EVAL/EVALSHA with keys on several nodes fails with CROSSSLOT.
 - During a slot migration, a pipelined command that gets redirected can run after later commands of the same pipeline. Cluster-aware clients (Lettuce, Jedis) behave the same way.
 - A primary that hangs without closing its connections isn't routed around until it answers again (see [Cluster changes](#cluster-changes)).
-- CLIENT commands (CLIENT LIST, CLIENT KILL, ...) go to a backend node and describe the proxy's backend connections, not the proxy's clients.
-- PROXY STATS and PROXY CLIENTINFO return placeholder values.
 - SCAN cursors are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one) and only in the database it started in.
 - SCAN returns keys whose bytes aren't valid UTF-8 with those bytes replaced, and MATCH patterns with such bytes match nothing (a Glide limitation). Other commands are binary-safe.
 - Set replies (SMEMBERS, SINTER, ...) contain the right members, but not necessarily in the server's iteration order.

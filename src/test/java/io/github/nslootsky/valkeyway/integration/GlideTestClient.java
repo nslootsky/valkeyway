@@ -137,14 +137,6 @@ public class GlideTestClient implements AutoCloseable {
         return client.scan(cursor, options).get(5, TimeUnit.SECONDS);
     }
 
-    public String proxyFlushClients() throws Exception {
-        return (String) client.customCommand(new String[]{"PROXY", "FLUSHCLIENTS"}).get(5, TimeUnit.SECONDS);
-    }
-
-    public String proxyClientInfo(String clientId) throws Exception {
-        return (String) client.customCommand(new String[]{"PROXY", "CLIENTINFO", clientId}).get(5, TimeUnit.SECONDS);
-    }
-
     public String customCommand(String... args) throws Exception {
         return (String) client.customCommand(args).get(5, TimeUnit.SECONDS);
     }
