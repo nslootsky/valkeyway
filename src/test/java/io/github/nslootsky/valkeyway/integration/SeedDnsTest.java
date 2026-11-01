@@ -13,11 +13,11 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.IOException;
@@ -34,9 +34,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * re-pointed: first at another cluster while the old one stays up (a blue/green cutover), then at
  * nothing (every seed gone).
  *
- * <p>The proxy has to resolve a name the test controls, so it runs in a container built from the
- * packaged jar (Maven passes its path as {@code valkeyway.jar}; {@code mvn verify} builds it before
- * the integration tests), and the test rewrites that container's /etc/hosts.
+ * <p>The proxy has to resolve a name the test controls, so it runs in a JRE container with the
+ * packaged jar mounted (Maven passes its path as {@code valkeyway.jar}; {@code mvn verify} builds
+ * it before the integration tests), and the test rewrites that container's /etc/hosts.
  */
 @Tag("integration")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -62,17 +62,14 @@ class SeedDnsTest {
         assertNotNull(jarProperty, "run through Maven (mvn verify), which passes the packaged jar as valkeyway.jar");
         Path jar = Path.of(jarProperty);
         assertTrue(Files.exists(jar), "package the proxy first: " + jar);
-        ImageFromDockerfile image = new ImageFromDockerfile("valkeyway-seed-dns-test", true)
-                .withFileFromPath("app.jar", jar)
-                .withDockerfileFromBuilder(b -> b.from("docker.io/eclipse-temurin:25-jre-alpine")
-                        .copy("app.jar", "/app.jar")
-                        .entryPoint("java", "-jar", "/app.jar")
-                        .build());
-        proxy = new GenericContainer<>(image)
+        // The stock JRE image with the jar mounted read-only: nothing to build or upload.
+        proxy = new GenericContainer<>(DockerImageName.parse("docker.io/eclipse-temurin:25-jre-alpine"))
+                .withFileSystemBind(jar.toAbsolutePath().toString(), "/app.jar", BindMode.READ_ONLY)
                 .withNetwork(network)
                 .withExtraHost(SEED, ip(clusterA))
                 .withExposedPorts(6379)
-                .withCommand("--proxy.cluster-nodes=" + SEED + ":6379",
+                .withCommand("java", "-jar", "/app.jar",
+                        "--proxy.cluster-nodes=" + SEED + ":6379",
                         "--proxy.glide.topology-check-seconds=2",
                         "--management.server.port=6380")
                 .waitingFor(Wait.forLogMessage(".*Started ValkeywayApplication.*", 1))
