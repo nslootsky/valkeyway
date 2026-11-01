@@ -93,7 +93,7 @@ About 900 lines in total, replacing resp-server (2,650) and RxJava.
 
 Inside MULTI, commands are only queued locally (no backend call); EXEC is the barrier.
 
-Caveat: during resharding, Glide's MOVED/ASK retries can reorder two in-flight commands to the *same* slot. Pipelines to a standalone server never see this. I consider it acceptable, but it's worth knowing.
+Caveat: during resharding, Glide's MOVED/ASK retries can reorder two in-flight commands to the *same* slot. Pipelines to a standalone server never see this. I consider it acceptable, but it's worth knowing. (Superseded: see phase 2 below; commands from one connection now reach Glide as one unit at a time, so this can only happen inside a batch.)
 
 ## Threading
 
@@ -138,7 +138,7 @@ Each phase ends green on the full suite and with a benchmark run.
 
 0. **Fix the node stall now, on the current code:** route blocking commands through a leased pool. It's independent of the protocol layer and fixes a correctness bug. *Done:* a same-slot GET during a BLPOP now answers in ~4 ms instead of failing after 2 s; throughput is unchanged (A/B within ±2%).
 1. **New transport, decoder, encoder and `Connection`; resp-server removed.** Existing handlers run via a sync adapter on a per-connection virtual thread (serial, no pipelining yet). This alone removes event-loop blocking (thread stall), fixes the idle disconnect, 64-bit integers and the null array. *Done:* thread stall gone (max PING 37 ms with a client blocked in BLPOP, was 4.8 s); throughput +10–23% at 200 clients; correct 64-bit integers, both RESP2 nulls and status replies (72 differential cases). Cost: a single connection doing request/response is ~5 µs slower per request (~30k vs ~36k rps), because each command now hops to a virtual thread and back. Phase 2's async path removes that hop.
-2. **Async hot path:** `CatchAllCommand` returns its future, with the ordered pipeline and barriers. This is the throughput phase.
+2. **Async hot path:** `CatchAllCommand` returns its future, with the ordered pipeline and barriers. This is the throughput phase. *Done:* Glide turned out **not** to keep the order of separately submitted requests (pipelined `INCR`s on one key came back swapped), but it does keep order within a non-atomic `ClusterBatch` (0 violations in 200k commands). So each connection sends at most one backend unit at a time: a single command, or one batch of everything that queued up meanwhile. Results: request/response back to ~36k rps (+18–23% over phase 1); pipelined clients 2.4–4.4× faster (one client with P=16: 45k → 200k; 50–200 clients with P=16: 160–180k → 410–530k). Unpipelined many-client throughput is unchanged (~150–170k): each request still goes to Glide on its own, and Glide caps single requests at ~210k/s for the whole process. Follow-up: single commands that arrive from different connections in the same network-thread iteration are now sent to Glide as one batch (`proxy.glide.coalesce-requests`), and the default number of network threads dropped from one per core to 2, so batches actually form. Unpipelined 50–200 clients: 140–170k → 200–290k rps (+43–70%); pipelines +9–18% more. One network thread was faster still for small values (~330k), but used ~90% of a core with 10 KB values.
 3. RESP3 and `HELLO 3`.
 4. Client TLS and AUTH (plus backend credentials/TLS in the same release).
 
@@ -152,6 +152,7 @@ Each phase ends green on the full suite and with a benchmark run.
 
 - **Glide reply integrity.** Unrouted `customCommand` misreads top-level map replies as multi-node results (order lost, binary keys corrupted; valkey-glide #4963), and Glide reshapes some replies by command name. Fixed in `0224d36` (explicit `SlotIdRoute` for map-reply commands) and `e5acdb3` (`Resp2Shapes`). The new encoder must keep both, and `DifferentialRepliesTest` is the check that it does.
 - **Glide's routed call path costs ~1.5 µs more CPU per request** (our own slot lookup is ~50 ns). Routing every command cost 4–6% throughput, so only map-reply commands are routed.
+- **Glide limits (measured 2026-11-01).** Single requests top out at ~210k/s for the whole process, regardless of the number of Glide clients or submitting threads, so extra Glide clients per DB don't help. Glide also rejects requests beyond 1000 in flight per client by default; the proxy now sets `inflightRequestsLimit` to 50000 (`68fe1da`). Batches cost ~2.3 µs per command against ~17 µs for a single request.
 - **The ~150k rps plateau may be partly Glide, not just our blocked event loops.** At the plateau the proxy used only ~3 of 24 cores (~24 µs of CPU per request), and extra Glide-side work lowered throughput more than its CPU cost explains, which suggests a serialization point per Glide client. Phase 2 should first measure throughput against the number of Glide clients per DB, before attributing all of the gain to async pipelining.
 
 ## Decisions (2026-10-31)
@@ -160,3 +161,30 @@ Each phase ends green on the full suite and with a benchmark run.
 2. **Inline commands:** supported, with Valkey-style quote handling.
 3. **Same-slot reordering during resharding:** accepted and documented (same as cluster-aware clients such as Lettuce and Jedis). Phase 2 tests whether Glide actually reorders.
 4. **`PROXY` commands:** make them real. STATS and CLIENTINFO come from the connection registry; CONFIG only covers settings that take effect; FLUSHCLIENTS is removed. The registry also lets the proxy answer `CLIENT LIST` / `CLIENT KILL` with real clients.
+
+## Topology changes (2026-11-01)
+
+`TopologyChangeTest` runs live traffic against its own cluster (3 primaries with a replica each, plus a spare node) while the cluster changes shape, through all three backend paths: single commands, client pipelines, and single commands coalesced across connections. Note that a pipeline's first command is always sent alone, since the connection starts a unit as soon as a command arrives; only the commands queued behind it form a batch.
+
+| Change | Result |
+|---|---|
+| ASK during a migration | Followed on every path, also inside batches. |
+| TRYAGAIN (multi-key command, keys split mid-migration) | Glide retries it for single commands, but not inside batches (`retry_server_error` is off). Coalesced commands are now resent alone (below). Pipelines report it, matching a cluster-aware client's pipeline. |
+| MOVED inside a batch, slot moved to a new shard | Followed on every path, including to a node Glide had never connected to. |
+| Graceful failover (`CLUSTER FAILOVER`) under load | No errors; every acknowledged INCR applied exactly once. |
+| Primary killed | The proxy served the slot as soon as the replica was promoted. Writes during the outage fail. |
+| Primary hung (`DEBUG SLEEP`) | Not routed around until the node answers again. Request timeouts don't trigger a topology refresh, and the refresh a periodic check eventually starts queries every node, including the hung one, over a connection without a response timeout. A shorter periodic interval (5 s) didn't help. Upstream issue to file. |
+
+**Coalesced batches resend rejected commands.** Inside a batch Glide returns TRYAGAIN, CLUSTERDOWN, MASTERDOWN, LOADING and READONLY (and MOVED/ASK when it can't follow them), where it would retry a single command. Each command in a coalesced batch is the only one its connection has in flight, so `CatchAllCommand` resends those alone through the single-command path; that can't reorder anything a client can observe. Whole-batch failures (timeouts, connection loss) are not resent, since the commands may have run. Client pipelines keep the errors: resending one command would run it after the commands behind it, and a standalone server's pipeline reports errors per command too (Jedis, Lettuce and Glide's standalone batches don't retry error replies).
+
+**Outage errors read as backend failures.** While a node is down, Glide's errors include redirects it couldn't follow (`MOVED 3739 127.0.0.1:7003; ExtensionError`, which a standalone client never expects; Jedis even throws `JedisMovedDataException`) and internal text (`BrokenPipe: Cluster: Failed to receive command response from internal sender`). `ServerErrors` rewrites them as `ERR backend unavailable: <what>; the command did not run` (redirect not followed, no connection to the node) or `...; the command may or may not have run` (connection lost, request timed out), so clients can tell whether a retry is safe.
+
+**Seeds and client lifetime.** Glide clients are no longer evicted after 30 s idle: a live client follows the topology itself, and re-creating one was the only time the seeds were read again, so a busy proxy never noticed a re-pointed seed name while an idle one did by accident. Instead:
+
+- The configured `cluster-nodes` are passed to Glide unchanged, so DNS names are resolved by Glide.
+- `proxy.glide.refresh-topology-from-seeds` (default true) sets Glide's `refreshTopologyFromInitialNodes`: each topology check resolves the seeds again and asks them, so re-pointing a seed name at another cluster (blue/green cutover) moves the proxy there, while the old cluster is still up. Glide falls back to the nodes it knows when the seeds can't be reached, so static IP seeds lose nothing. The switch isn't atomic (in-flight requests finish on the old cluster; each database's client and each blocking-pool client switches at its own check), and Glide refreshes slots at most once per 15-30 s, so a cutover shortly after a refresh waits that out (21 s in `SeedDnsTest` with 2 s checks).
+- A new client (another database, the blocking pool) whose configured seeds can't be reached at all is created from the nodes a live client currently knows (CLUSTER NODES), with a warning to update `proxy.cluster-nodes`.
+
+`SeedDnsTest` runs the packaged proxy in a container seeded with a host name, re-points the name from one cluster to another by rewriting the container's /etc/hosts, then removes it. With `refresh-topology-from-seeds=false` the proxy stays on the old cluster indefinitely.
+
+The Glide and Valkey behaviors these findings rely on are catalogued, with their code sites and guarding tests, in [UPSTREAM_ASSUMPTIONS.md](UPSTREAM_ASSUMPTIONS.md).

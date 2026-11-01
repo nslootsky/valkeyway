@@ -27,6 +27,8 @@ import java.util.concurrent.TimeUnit;
  * <p>The command table is loaded once from the cluster. Commands with fixed key positions
  * (first/last/step) are resolved locally; commands with movable keys (EVAL, ZUNIONSTORE,
  * XREAD, ...) or unknown to the table fall back to {@code COMMAND GETKEYS}.
+ *
+ * <p>Relies on upstream behavior: [upstream:V4] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public class CommandKeyExtractor {
 
@@ -42,6 +44,16 @@ public class CommandKeyExtractor {
     /** For tests: use a fixed command table instead of loading it from the cluster. */
     CommandKeyExtractor(Map<String, KeySpec> table) {
         this.table = table;
+    }
+
+    /** Whether the command table is loaded, so key lookups never block. */
+    public boolean isLoaded() {
+        return table != null;
+    }
+
+    /** Loads the command table now (blocking), e.g. at startup. */
+    public void preload(GlideClusterClient client) {
+        loadTable(client);
     }
 
     /** Returned by {@link #singleSlot} when a command has no keys, or keys in more than one slot. */

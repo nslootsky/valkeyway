@@ -10,6 +10,8 @@ import java.math.RoundingMode;
 
 /**
  * Number formatting that matches what Valkey sends as text.
+ *
+ * <p>Relies on upstream behavior: [upstream:V1] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public final class DoubleFormat {
 

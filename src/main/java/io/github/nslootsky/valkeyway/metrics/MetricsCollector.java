@@ -40,12 +40,22 @@ public class MetricsCollector {
                 .register(meterRegistry);
     }
 
+    /** Most distinct command names tracked; anything beyond is counted as OTHER (bounds tag cardinality). */
+    private static final int MAX_COMMAND_TAGS = 512;
+    private final java.util.concurrent.ConcurrentHashMap<String, Counter> perCommand = new java.util.concurrent.ConcurrentHashMap<>();
+
     public void recordCommand(String commandName) {
         commandsProcessed.increment();
-        Counter.builder(PREFIX + ".commands.processed")
-                .tag("type", commandName.toUpperCase())
-                .register(meterRegistry)
-                .increment();
+        Counter counter = perCommand.get(commandName);
+        if (counter == null) {
+            counter = perCommand.computeIfAbsent(commandName, this::commandCounter);
+        }
+        counter.increment();
+    }
+
+    private Counter commandCounter(String commandName) {
+        String type = perCommand.size() < MAX_COMMAND_TAGS ? commandName.toUpperCase(java.util.Locale.ROOT) : "OTHER";
+        return Counter.builder(PREFIX + ".commands.processed").tag("type", type).register(meterRegistry);
     }
 
     public void recordError() {

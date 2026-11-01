@@ -8,7 +8,6 @@ package io.github.nslootsky.valkeyway.integration;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Status;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,8 +31,7 @@ class ReshardingTest extends IntegrationTestBase {
 
             String source = nodes.ownerOf("{reshard}k");
             String target = nodes.addresses().stream().filter(a -> !a.equals(source)).findFirst().orElseThrow();
-            long slot = (Long) nodes.at(source).call("CLUSTER", "KEYSLOT", "{reshard}k");
-            moveSlot(nodes, slot, source, target);
+            nodes.moveSlot(nodes.slotOf("{reshard}k"), source, target);
             assertEquals(target, nodes.ownerOf("{reshard}k"), "slot should now be served by the target");
 
             // Reads and writes through the proxy, whose slot map still points at the old owner.
@@ -41,28 +39,6 @@ class ReshardingTest extends IntegrationTestBase {
             assertEquals(List.of("a", "1", "b", "2"), proxy.call("ZRANGE", "{reshard}z", "0", "-1", "WITHSCORES"));
             assertEquals(new Status("OK"), proxy.call("SET", "{reshard}k", "after"));
             assertEquals("after", nodes.at(target).call("GET", "{reshard}k"), "write must land on the new owner");
-        }
-    }
-
-    /** Standard live slot migration: IMPORTING/MIGRATING, MIGRATE the keys, then assign the slot. */
-    private static void moveSlot(DirectNodes nodes, long slot, String source, String target) throws Exception {
-        String sourceId = (String) nodes.at(source).call("CLUSTER", "MYID");
-        String targetId = (String) nodes.at(target).call("CLUSTER", "MYID");
-        String s = Long.toString(slot);
-
-        assertEquals(new Status("OK"), nodes.at(target).call("CLUSTER", "SETSLOT", s, "IMPORTING", sourceId));
-        assertEquals(new Status("OK"), nodes.at(source).call("CLUSTER", "SETSLOT", s, "MIGRATING", targetId));
-
-        List<?> keys = (List<?>) nodes.at(source).call("CLUSTER", "GETKEYSINSLOT", s, "1000");
-        if (!keys.isEmpty()) {
-            String[] hostPort = target.split(":");
-            List<String> migrate = new ArrayList<>(List.of("MIGRATE", hostPort[0], hostPort[1], "", "0", "5000", "KEYS"));
-            keys.forEach(k -> migrate.add((String) k));
-            assertEquals(new Status("OK"), nodes.at(source).call(migrate.toArray(String[]::new)));
-        }
-
-        for (String address : nodes.addresses()) {
-            assertEquals(new Status("OK"), nodes.at(address).call("CLUSTER", "SETSLOT", s, "NODE", targetId));
         }
     }
 }

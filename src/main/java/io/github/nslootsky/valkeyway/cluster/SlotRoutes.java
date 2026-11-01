@@ -16,6 +16,8 @@ import glide.api.models.configuration.RequestRoutingConfiguration.SlotType;
  * WITHSCORES, XRANGE, ...) as a multi-node result. It then rebuilds it as an unordered HashMap
  * and decodes every key as UTF-8 text, which scrambles order and corrupts binary keys
  * (valkey-glide issue #4963). With a single-node route Glide returns the reply untouched.
+ *
+ * <p>Relies on upstream behavior: [upstream:G5] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
 public final class SlotRoutes {
 

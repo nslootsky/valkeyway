@@ -236,6 +236,40 @@ class DifferentialRepliesTest extends IntegrationTestBase {
         assertEquals(expected, actual, testCase.name());
     }
 
+    /**
+     * The same cases with setup and command sent through the proxy as one pipeline, so the command
+     * runs inside a backend batch rather than on its own.
+     */
+    @ParameterizedTest(name = "pipelined: {0}")
+    @MethodSource("cases")
+    void pipelinedProxyReplyMatchesServer(Case testCase) throws Exception {
+        int id = SEQ.incrementAndGet();
+        String directPrefix = "{diff:" + id + ":d}";
+        String proxyPrefix = "{diff:" + id + ":p}";
+
+        RawRespClient owner = nodes().at(nodes().ownerOf(directPrefix));
+        for (String[] cmd : testCase.setup()) {
+            owner.call(withPrefix(cmd, directPrefix));
+        }
+        Object expected = owner.call(withPrefix(testCase.command(), directPrefix));
+
+        List<String[]> pipeline = new ArrayList<>();
+        for (String[] cmd : testCase.setup()) {
+            pipeline.add(withPrefix(cmd, proxyPrefix));
+        }
+        pipeline.add(withPrefix(testCase.command(), proxyPrefix));
+        Object actual;
+        try (RawRespClient proxy = new RawRespClient("127.0.0.1", RESP_PORT)) {
+            actual = rename(proxy.pipeline(pipeline).getLast(), proxyPrefix, directPrefix);
+        }
+
+        if (testCase.unordered()) {
+            expected = sorted(expected);
+            actual = sorted(actual);
+        }
+        assertEquals(expected, actual, testCase.name());
+    }
+
     private static String[] withPrefix(String[] cmd, String prefix) {
         return Arrays.stream(cmd).map(a -> a.replace("%", prefix)).toArray(String[]::new);
     }

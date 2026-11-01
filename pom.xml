@@ -129,6 +129,8 @@
                         <junit.jupiter.execution.parallel.enabled>false</junit.jupiter.execution.parallel.enabled>
                         <junit.jupiter.execution.parallel.config.strategy>fixed</junit.jupiter.execution.parallel.config.strategy>
                         <junit.jupiter.execution.parallel.config.fixed.parallelism>1</junit.jupiter.execution.parallel.config.fixed.parallelism>
+                        <!-- SeedDnsTest runs the packaged proxy in a container -->
+                        <valkeyway.jar>${project.build.directory}/${project.build.finalName}.jar</valkeyway.jar>
                     </systemPropertyVariables>
                 </configuration>
                 <executions>

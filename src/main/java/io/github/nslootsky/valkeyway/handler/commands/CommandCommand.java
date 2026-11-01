@@ -31,6 +31,7 @@ public class CommandCommand implements CommandHandler {
      * redis-cli barfs if flag values aren't simple strings:
      * > redis-cli: redis-cli.c:583: cliAddCommandDocArg: Assertion `flags->element[j]->type == REDIS_REPLY_STATUS' failed.
      */
+    // [upstream:G7]
     private static final Set<String> DOC_FLAG_VALUES = Set.of("optional", "multiple", "multiple_token");
 
     private final GlideClientCache glideClientCache;

@@ -6,6 +6,9 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import glide.api.GlideClusterClient;
+import glide.api.models.ClusterBatch;
+import io.netty.channel.EventLoop;
+import io.netty.util.concurrent.FastThreadLocal;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
 import glide.api.models.exceptions.RequestException;
@@ -21,23 +24,33 @@ import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.GlideReplies;
 import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
 import io.github.nslootsky.valkeyway.reply.ServerErrors;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.AsyncCommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * Fallback handler for every command without a dedicated handler: forwards it via Glide's
  * customCommand(), or queues it while the connection is in MULTI.
+ *
+ * <p>Most commands start asynchronously on the network thread (see {@link #canRunAsync}), so a
+ * connection can pipeline them. The rest run through {@link #execute} on a virtual thread.
+ *
+ * <p>Relies on upstream behavior: [upstream:G3] [upstream:G4] [upstream:G5] (docs/UPSTREAM_ASSUMPTIONS.md).
  */
-public class CatchAllCommand implements CommandHandler {
+public class CatchAllCommand implements AsyncCommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CatchAllCommand.class);
 
@@ -46,10 +59,234 @@ public class CatchAllCommand implements CommandHandler {
     private final BlockingClientPool blockingPool;
     private final CommandKeyExtractor keyExtractor = new CommandKeyExtractor();
 
+    private static final Executor FALLBACK = Executors.newVirtualThreadPerTaskExecutor();
+
+    private final boolean coalesceRequests;
+    /** One coalescer per network thread: commands it collects are flushed at the end of the loop iteration. */
+    private final FastThreadLocal<Coalescer> coalescer = new FastThreadLocal<>() {
+        @Override
+        protected Coalescer initialValue() {
+            return new Coalescer();
+        }
+    };
+
     public CatchAllCommand(GlideClientCache glideClientCache, MetricsCollector metrics, BlockingClientPool blockingPool) {
+        this(glideClientCache, metrics, blockingPool, true);
+    }
+
+    public CatchAllCommand(GlideClientCache glideClientCache, MetricsCollector metrics, BlockingClientPool blockingPool,
+                           boolean coalesceRequests) {
         this.glideClientCache = glideClientCache;
         this.metrics = metrics;
         this.blockingPool = blockingPool;
+        this.coalesceRequests = coalesceRequests;
+    }
+
+    /**
+     * Collects single commands from different connections on one network thread and sends them to
+     * Glide together at the end of the event-loop iteration: one command goes alone (with map-reply
+     * routing), several go as one non-atomic batch. Ordering is unaffected: each connection has at most
+     * one unit in flight, and different connections' commands have no order between them.
+     */
+    private final class Coalescer {
+        private record Pending(byte[][] args, CompletableFuture<Reply> reply, io.micrometer.core.instrument.Timer.Sample timer) {}
+
+        private final java.util.Map<Integer, List<Pending>> byDb = new java.util.HashMap<>();
+        private boolean flushScheduled;
+
+        CompletionStage<Reply> add(int db, byte[][] args, io.micrometer.core.instrument.Timer.Sample timer, EventLoop loop) {
+            CompletableFuture<Reply> reply = new CompletableFuture<>();
+            byDb.computeIfAbsent(db, d -> new ArrayList<>()).add(new Pending(args, reply, timer));
+            if (!flushScheduled) {
+                flushScheduled = true;
+                loop.execute(() -> flush(loop));
+            }
+            return reply;
+        }
+
+        private void flush(EventLoop loop) {
+            flushScheduled = false;
+            for (var entry : byDb.entrySet()) {
+                List<Pending> pending = entry.getValue();
+                if (pending.isEmpty()) {
+                    continue;
+                }
+                List<Pending> work = new ArrayList<>(pending);
+                pending.clear();
+                GlideClusterClient client = glideClientCache.getIfPresent(entry.getKey());
+                if (client == null) {
+                    for (Pending p : work) {
+                        p.reply().complete(Reply.error("ERR backend client unavailable, retry"));
+                    }
+                } else if (work.size() == 1) {
+                    sendOne(client, work.getFirst(), loop);
+                } else {
+                    sendBatch(client, work, loop);
+                }
+            }
+        }
+
+        private void sendOne(GlideClusterClient client, Pending p, EventLoop loop) {
+            send(client, p.args()).handleAsync((result, error) -> {
+                complete(p, error != null ? ServerErrors.error(unwrap(error)) : toReply(p.args(), result));
+                return null;
+            }, loop);
+        }
+
+        private void sendBatch(GlideClusterClient client, List<Pending> work, EventLoop loop) {
+            ClusterBatch batch = new ClusterBatch(false).withBinaryOutput();
+            for (Pending p : work) {
+                byte[][] args = p.args();
+                GlideString[] glideArgs = new GlideString[args.length];
+                for (int i = 0; i < args.length; i++) {
+                    glideArgs[i] = GlideString.of(args[i]);
+                }
+                batch.customCommand(glideArgs);
+            }
+            client.exec(batch, false).handleAsync((results, error) -> {
+                for (int i = 0; i < work.size(); i++) {
+                    Pending p = work.get(i);
+                    Reply reply = error != null ? ServerErrors.error(unwrap(error))
+                            : results == null || i >= results.length ? Reply.error("ERR missing reply in batch")
+                            : GlideReplies.toReply(Resp2Shapes.shape(p.args(), results[i]));
+                    if (error == null && reply instanceof Reply.Error e && ServerErrors.rejectedWithoutRunning(e)) {
+                        // [upstream:G3] Glide retries these for a single command but not inside a batch. Each command
+                        // here is the only one its connection has in flight, so resending it alone
+                        // can't reorder it against that connection's other commands.
+                        sendOne(client, p, loop);
+                    } else {
+                        complete(p, reply);
+                    }
+                }
+                return null;
+            }, loop);
+        }
+
+        private void complete(Pending p, Reply reply) {
+            metrics.stopTimer(p.timer());
+            if (reply instanceof Reply.Error) {
+                metrics.recordError();
+            }
+            p.reply().complete(reply);
+        }
+    }
+
+    /**
+     * Async unless the command needs connection state handled on the barrier path (MULTI queueing,
+     * CLIENT, WATCH/UNWATCH), may block (BLPOP & co. use a leased client), or would block the network
+     * thread to set something up (the database's first Glide client, the COMMAND table).
+     */
+    @Override
+    public boolean canRunAsync(Request request) {
+        Connection connection = request.connection();
+        byte[][] args = request.args();
+        if (connection.inTransaction() || isBarrierCommand(args[0]) || BlockingCommands.detect(args).isPresent()) {
+            return false;
+        }
+        if (glideClientCache.getIfPresent(connection.db()) == null) {
+            return false;
+        }
+        return !MapReplyCommands.mayReturnMap(args) || keyExtractor.isLoaded();
+    }
+
+    @Override
+    public CompletionStage<Reply> executeAsync(Request request, Executor replyExecutor) {
+        GlideClusterClient client = glideClientCache.getIfPresent(request.connection().db());
+        if (client == null) {
+            // Evicted since canRunAsync: create it off the network thread (execute() records metrics).
+            return CompletableFuture.supplyAsync(() -> execute(request), FALLBACK);
+        }
+        byte[][] args = request.args();
+        var timer = metrics.startTimer();
+        metrics.recordCommand(request.command());
+        if (coalesceRequests && replyExecutor instanceof EventLoop loop && loop.inEventLoop()) {
+            return coalescer.get().add(request.connection().db(), args, timer, loop);
+        }
+        return send(client, args).handleAsync((result, error) -> {
+            metrics.stopTimer(timer);
+            Reply reply = error != null ? ServerErrors.error(unwrap(error)) : toReply(args, result);
+            if (reply instanceof Reply.Error) {
+                metrics.recordError();
+            }
+            return reply;
+        }, replyExecutor);
+    }
+
+    /**
+     * [upstream:G4] A pipeline: one non-atomic ClusterBatch, which Glide executes in order per node (separately
+     * submitted commands can be reordered). Batch results don't go through Glide's ClusterValue, so
+     * map replies keep their order and bytes without explicit routing.
+     */
+    @Override
+    public CompletionStage<List<Reply>> executeBatchAsync(List<Request> requests, Executor replyExecutor) {
+        GlideClusterClient client = glideClientCache.getIfPresent(requests.getFirst().connection().db());
+        if (client == null) {
+            return CompletableFuture.supplyAsync(() -> requests.stream().map(this::execute).toList(), FALLBACK);
+        }
+        ClusterBatch batch = new ClusterBatch(false).withBinaryOutput();
+        for (Request request : requests) {
+            byte[][] args = request.args();
+            GlideString[] glideArgs = new GlideString[args.length];
+            for (int i = 0; i < args.length; i++) {
+                glideArgs[i] = GlideString.of(args[i]);
+            }
+            batch.customCommand(glideArgs);
+            metrics.recordCommand(request.command());
+        }
+        var timer = metrics.startTimer();
+        return client.exec(batch, false).handleAsync((results, error) -> {
+            metrics.stopTimer(timer);
+            List<Reply> replies = new ArrayList<>(requests.size());
+            for (int i = 0; i < requests.size(); i++) {
+                Reply reply;
+                if (error != null) {
+                    reply = ServerErrors.error(unwrap(error));
+                } else if (results == null || i >= results.length) {
+                    reply = Reply.error("ERR missing reply in pipeline");
+                } else {
+                    reply = GlideReplies.toReply(Resp2Shapes.shape(requests.get(i).args(), results[i]));
+                }
+                if (reply instanceof Reply.Error) {
+                    metrics.recordError();
+                }
+                replies.add(reply);
+            }
+            return replies;
+        }, replyExecutor);
+    }
+
+    private static boolean isBarrierCommand(byte[] name) {
+        return switch (name.length) {
+            case 5 -> equalsIgnoreCase(name, "WATCH");
+            case 6 -> equalsIgnoreCase(name, "CLIENT");
+            case 7 -> equalsIgnoreCase(name, "UNWATCH");
+            default -> false;
+        };
+    }
+
+    private static boolean equalsIgnoreCase(byte[] name, String expected) {
+        for (int i = 0; i < name.length; i++) {
+            if ((name[i] | 0x20) != (expected.charAt(i) | 0x20)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static Throwable unwrap(Throwable e) {
+        return (e instanceof java.util.concurrent.CompletionException || e instanceof ExecutionException) && e.getCause() != null
+                ? e.getCause() : e;
+    }
+
+    /** Loads routing metadata in the background so map-reply commands can start async soon after startup. */
+    public void warmUp() {
+        Thread.ofVirtual().name("catchall-warmup").start(() -> {
+            try {
+                keyExtractor.preload(glideClientCache.getClient(0));
+            } catch (Exception e) {
+                log.warn("Warm-up failed; routing metadata will load on first use: {}", e.getMessage());
+            }
+        });
     }
 
     @Override
@@ -154,7 +391,36 @@ public class CatchAllCommand implements CommandHandler {
      * for reply integrity. Everything else, and keyless or multi-slot commands, keep Glide's own
      * routing (fan-out, splitting, aggregation), which is also Glide's faster path.
      */
+    /**
+     * Sends one command. If Glide returns a redirect instead of following it, the command is resent
+     * as a one-command batch. [upstream:G10] For single commands to a migrating slot under concurrent
+     * traffic, Glide often fails to follow ASK and returns the importing node's MOVED; inside a batch
+     * it follows ASK reliably. The node rejected the command without running it, so resending is safe.
+     */
     private CompletableFuture<ClusterValue<Object>> send(GlideClusterClient client, byte[][] args) {
+        return sendOnce(client, args).exceptionallyCompose(e -> ServerErrors.isUnfollowedRedirect(e)
+                ? sendAsBatch(client, args)
+                : CompletableFuture.failedFuture(e));
+    }
+
+    private static CompletableFuture<ClusterValue<Object>> sendAsBatch(GlideClusterClient client, byte[][] args) {
+        GlideString[] glideArgs = new GlideString[args.length];
+        for (int i = 0; i < args.length; i++) {
+            glideArgs[i] = GlideString.of(args[i]);
+        }
+        ClusterBatch batch = new ClusterBatch(false).withBinaryOutput();
+        batch.customCommand(glideArgs);
+        return client.exec(batch, false).thenCompose(results -> {
+            Object result = results == null || results.length == 0 ? null : results[0];
+            // ofSingleValue, not of(): of() misreads map replies as multi-node results [upstream:G5].
+            return result instanceof Throwable failure
+                    ? CompletableFuture.<ClusterValue<Object>>failedFuture(failure)
+                    : CompletableFuture.completedFuture(ClusterValue.ofSingleValue(result));
+        });
+    }
+
+    // [upstream:G5] map-reply commands need an explicit route.
+    private CompletableFuture<ClusterValue<Object>> sendOnce(GlideClusterClient client, byte[][] args) {
         GlideString[] glideArgs = new GlideString[args.length];
         for (int i = 0; i < args.length; i++) {
             glideArgs[i] = GlideString.of(args[i]);
