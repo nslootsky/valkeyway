@@ -5,69 +5,67 @@
 
 package io.github.nslootsky.valkeyway.metrics;
 
+import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.server.CommandListener;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
 /**
- * Micrometer-based metrics tracking: commands processed (by type), errors, and latency.
- * Exposed via Spring Boot Actuator endpoints.
+ * Command metrics, exposed through Spring Boot Actuator: commands processed (in total and by
+ * command), errors, and latency. Fed by the RESP server for every answered command, whichever
+ * handler answered it.
  */
 @Component
-public class MetricsCollector {
+public class MetricsCollector implements CommandListener {
 
     private static final String PREFIX = "proxy";
+    /** Distinct command names tagged individually; later ones count as OTHER, bounding the series. */
+    private static final int MAX_COMMAND_TAGS = 512;
 
+    private final MeterRegistry meterRegistry;
     private final Counter commandsProcessed;
     private final Counter errors;
     private final Timer commandLatency;
-    private final MeterRegistry meterRegistry;
+    private final ConcurrentHashMap<String, Counter> perCommand = new ConcurrentHashMap<>();
 
     public MetricsCollector(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
-
         commandsProcessed = Counter.builder(PREFIX + ".commands.processed")
                 .description("Total commands processed")
                 .register(meterRegistry);
-
         errors = Counter.builder(PREFIX + ".errors")
                 .description("Total command errors")
                 .register(meterRegistry);
-
         commandLatency = Timer.builder(PREFIX + ".commands.latency")
                 .description("Command execution latency")
                 .register(meterRegistry);
     }
 
-    /** Most distinct command names tracked; anything beyond is counted as OTHER (bounds tag cardinality). */
-    private static final int MAX_COMMAND_TAGS = 512;
-    private final java.util.concurrent.ConcurrentHashMap<String, Counter> perCommand = new java.util.concurrent.ConcurrentHashMap<>();
-
-    public void recordCommand(String commandName) {
+    @Override
+    public void answered(byte[] name, Reply reply, long elapsedNanos) {
         commandsProcessed.increment();
-        Counter counter = perCommand.get(commandName);
+        String command = new String(name, StandardCharsets.US_ASCII);
+        Counter counter = perCommand.get(command);
         if (counter == null) {
-            counter = perCommand.computeIfAbsent(commandName, this::commandCounter);
+            counter = perCommand.computeIfAbsent(command, this::commandCounter);
         }
         counter.increment();
+        if (reply instanceof Reply.Error) {
+            errors.increment();
+        }
+        commandLatency.record(elapsedNanos, TimeUnit.NANOSECONDS);
     }
 
-    private Counter commandCounter(String commandName) {
-        String type = perCommand.size() < MAX_COMMAND_TAGS ? commandName.toUpperCase(java.util.Locale.ROOT) : "OTHER";
+    private Counter commandCounter(String command) {
+        String type = perCommand.size() < MAX_COMMAND_TAGS ? command.toUpperCase(Locale.ROOT) : "OTHER";
         return Counter.builder(PREFIX + ".commands.processed").tag("type", type).register(meterRegistry);
-    }
-
-    public void recordError() {
-        errors.increment();
-    }
-
-    public Timer.Sample startTimer() {
-        return Timer.start();
-    }
-
-    public void stopTimer(Timer.Sample sample) {
-        sample.stop(commandLatency);
     }
 
     public double getTotalCommands() {

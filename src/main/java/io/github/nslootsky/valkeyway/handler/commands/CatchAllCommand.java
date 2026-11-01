@@ -19,7 +19,6 @@ import io.github.nslootsky.valkeyway.cluster.ClusterSlots;
 import io.github.nslootsky.valkeyway.cluster.CommandKeyExtractor;
 import io.github.nslootsky.valkeyway.cluster.MapReplyCommands;
 import io.github.nslootsky.valkeyway.cluster.SlotRoutes;
-import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.GlideReplies;
 import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
@@ -60,7 +59,6 @@ public class CatchAllCommand implements AsyncCommandHandler {
     private static final Logger log = LoggerFactory.getLogger(CatchAllCommand.class);
 
     private final GlideClientCache glideClientCache;
-    private final MetricsCollector metrics;
     private final BlockingClientPool blockingPool;
     private final CommandKeyExtractor keyExtractor = new CommandKeyExtractor();
 
@@ -75,14 +73,8 @@ public class CatchAllCommand implements AsyncCommandHandler {
         }
     };
 
-    public CatchAllCommand(GlideClientCache glideClientCache, MetricsCollector metrics, BlockingClientPool blockingPool) {
-        this(glideClientCache, metrics, blockingPool, true);
-    }
-
-    public CatchAllCommand(GlideClientCache glideClientCache, MetricsCollector metrics, BlockingClientPool blockingPool,
-                           boolean coalesceRequests) {
+    public CatchAllCommand(GlideClientCache glideClientCache, BlockingClientPool blockingPool, boolean coalesceRequests) {
         this.glideClientCache = glideClientCache;
-        this.metrics = metrics;
         this.blockingPool = blockingPool;
         this.coalesceRequests = coalesceRequests;
     }
@@ -94,14 +86,14 @@ public class CatchAllCommand implements AsyncCommandHandler {
      * one unit in flight, and different connections' commands have no order between them.
      */
     private final class Coalescer {
-        private record Pending(byte[][] args, CompletableFuture<Reply> reply, io.micrometer.core.instrument.Timer.Sample timer) {}
+        private record Pending(byte[][] args, CompletableFuture<Reply> reply) {}
 
         private final java.util.Map<Integer, List<Pending>> byDb = new java.util.HashMap<>();
         private boolean flushScheduled;
 
-        CompletionStage<Reply> add(int db, byte[][] args, io.micrometer.core.instrument.Timer.Sample timer, EventLoop loop) {
+        CompletionStage<Reply> add(int db, byte[][] args, EventLoop loop) {
             CompletableFuture<Reply> reply = new CompletableFuture<>();
-            byDb.computeIfAbsent(db, d -> new ArrayList<>()).add(new Pending(args, reply, timer));
+            byDb.computeIfAbsent(db, d -> new ArrayList<>()).add(new Pending(args, reply));
             if (!flushScheduled) {
                 flushScheduled = true;
                 loop.execute(() -> flush(loop));
@@ -133,7 +125,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
 
         private void sendOne(GlideClusterClient client, Pending p, EventLoop loop) {
             send(client, p.args()).handleAsync((result, error) -> {
-                complete(p, error != null ? ServerErrors.error(unwrap(error)) : toReply(p.args(), result));
+                p.reply().complete(error != null ? ServerErrors.error(error) : toReply(p.args(), result));
                 return null;
             }, loop);
         }
@@ -151,7 +143,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
             client.exec(batch, false).handleAsync((results, error) -> {
                 for (int i = 0; i < work.size(); i++) {
                     Pending p = work.get(i);
-                    Reply reply = error != null ? ServerErrors.error(unwrap(error))
+                    Reply reply = error != null ? ServerErrors.error(error)
                             : results == null || i >= results.length ? Reply.error("ERR missing reply in batch")
                             : GlideReplies.toReply(Resp2Shapes.shape(p.args(), results[i]));
                     if (error == null && reply instanceof Reply.Error e && ServerErrors.rejectedWithoutRunning(e)) {
@@ -160,19 +152,11 @@ public class CatchAllCommand implements AsyncCommandHandler {
                         // can't reorder it against that connection's other commands.
                         sendOne(client, p, loop);
                     } else {
-                        complete(p, reply);
+                        p.reply().complete(reply);
                     }
                 }
                 return null;
             }, loop);
-        }
-
-        private void complete(Pending p, Reply reply) {
-            metrics.stopTimer(p.timer());
-            if (reply instanceof Reply.Error) {
-                metrics.recordError();
-            }
-            p.reply().complete(reply);
         }
     }
 
@@ -198,23 +182,15 @@ public class CatchAllCommand implements AsyncCommandHandler {
     public CompletionStage<Reply> executeAsync(Request request, Executor replyExecutor) {
         GlideClusterClient client = glideClientCache.getIfPresent(request.connection().db());
         if (client == null) {
-            // Evicted since canRunAsync: create it off the network thread (execute() records metrics).
+            // Evicted since canRunAsync: create it off the network thread.
             return CompletableFuture.supplyAsync(() -> execute(request), FALLBACK);
         }
         byte[][] args = request.args();
-        var timer = metrics.startTimer();
-        metrics.recordCommand(request.command());
         if (coalesceRequests && replyExecutor instanceof EventLoop loop && loop.inEventLoop()) {
-            return coalescer.get().add(request.connection().db(), args, timer, loop);
+            return coalescer.get().add(request.connection().db(), args, loop);
         }
-        return send(client, args).handleAsync((result, error) -> {
-            metrics.stopTimer(timer);
-            Reply reply = error != null ? ServerErrors.error(unwrap(error)) : toReply(args, result);
-            if (reply instanceof Reply.Error) {
-                metrics.recordError();
-            }
-            return reply;
-        }, replyExecutor);
+        return send(client, args).handleAsync(
+                (result, error) -> error != null ? ServerErrors.error(error) : toReply(args, result), replyExecutor);
     }
 
     /**
@@ -236,23 +212,17 @@ public class CatchAllCommand implements AsyncCommandHandler {
                 glideArgs[i] = GlideString.of(args[i]);
             }
             batch.customCommand(glideArgs);
-            metrics.recordCommand(request.command());
         }
-        var timer = metrics.startTimer();
         return client.exec(batch, false).handleAsync((results, error) -> {
-            metrics.stopTimer(timer);
             List<Reply> replies = new ArrayList<>(requests.size());
             for (int i = 0; i < requests.size(); i++) {
                 Reply reply;
                 if (error != null) {
-                    reply = ServerErrors.error(unwrap(error));
+                    reply = ServerErrors.error(error);
                 } else if (results == null || i >= results.length) {
                     reply = Reply.error("ERR missing reply in pipeline");
                 } else {
                     reply = GlideReplies.toReply(Resp2Shapes.shape(requests.get(i).args(), results[i]));
-                }
-                if (reply instanceof Reply.Error) {
-                    metrics.recordError();
                 }
                 replies.add(reply);
             }
@@ -273,11 +243,6 @@ public class CatchAllCommand implements AsyncCommandHandler {
         return true;
     }
 
-    private static Throwable unwrap(Throwable e) {
-        return (e instanceof java.util.concurrent.CompletionException || e instanceof ExecutionException) && e.getCause() != null
-                ? e.getCause() : e;
-    }
-
     /** Loads routing metadata in the background so map-reply commands can start async soon after startup. */
     public void warmUp() {
         Thread.ofVirtual().name("catchall-warmup").start(() -> {
@@ -294,14 +259,12 @@ public class CatchAllCommand implements AsyncCommandHandler {
         Connection connection = request.connection();
         byte[][] args = request.args();
         String command = request.command();
-        var timer = metrics.startTimer();
 
         if (log.isDebugEnabled()) {
             log.debug("CMD {} args={}", command, Arrays.stream(args).map(a -> new String(a, StandardCharsets.UTF_8)).toList());
         }
 
         try {
-            metrics.recordCommand(command);
             if (connection.inTransaction()) {
                 return queueTransactionCommand(connection, args);
             }
@@ -311,19 +274,12 @@ public class CatchAllCommand implements AsyncCommandHandler {
             }
 
             Optional<BlockingCommands.Spec> blocking = BlockingCommands.detect(args);
-            Reply result = blocking.isPresent()
+            return blocking.isPresent()
                     ? handleBlockingCommand(connection, args, blocking.get())
                     : handleCustomCommand(connection, args);
-            if (result instanceof Reply.Error) {
-                metrics.recordError();
-            }
-            return result;
         } catch (Exception e) {
-            metrics.recordError();
             log.error("Error handling command {}", command, e);
             return ServerErrors.error(e);
-        } finally {
-            metrics.stopTimer(timer);
         }
     }
 

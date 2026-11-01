@@ -62,10 +62,16 @@ public final class Connection {
 
     /** A reply position, in request order. */
     private static final class Slot {
+        final byte[] name;
+        final long started = System.nanoTime();
         Reply reply;
         boolean done;
         boolean barrier;
         boolean closeAfter;
+
+        Slot(byte[] name) {
+            this.name = name;
+        }
     }
 
     private final long id;
@@ -73,6 +79,7 @@ public final class Connection {
     private final EventLoop loop;
     private final CommandTable commands;
     private final Executor executor;
+    private final CommandListener listener;
 
     // Event loop only.
     private final ArrayDeque<byte[][]> waiting = new ArrayDeque<>();
@@ -103,6 +110,7 @@ public final class Connection {
         this.loop = channel.eventLoop();
         this.commands = commands;
         this.executor = executor;
+        this.listener = commands.listener();
     }
 
     // --- command execution (event loop) ---
@@ -154,10 +162,16 @@ public final class Connection {
     }
 
     private void addInline(CommandHandler handler, Request request) {
-        Slot slot = new Slot();
-        slot.reply = execute(handler, request);
-        slot.done = true;
+        Slot slot = new Slot(request.args()[0]);
         slots.add(slot);
+        complete(slot, execute(handler, request));
+    }
+
+    /** Records a slot's reply and tells the listener. Event loop only. */
+    private void complete(Slot slot, Reply reply) {
+        slot.reply = reply;
+        slot.done = true;
+        listener.answered(slot.name, reply, System.nanoTime() - slot.started);
     }
 
     /**
@@ -168,7 +182,7 @@ public final class Connection {
         List<Request> requests = new ArrayList<>();
         List<Slot> unitSlots = new ArrayList<>();
         requests.add(first);
-        Slot firstSlot = new Slot();
+        Slot firstSlot = new Slot(first.args()[0]);
         unitSlots.add(firstSlot);
         slots.add(firstSlot);
         byte[][] next;
@@ -177,7 +191,7 @@ public final class Connection {
             CommandHandler h = commands.lookup(next[0], inTransaction);
             if (h == handler && handler.canRunAsync(request)) {
                 waiting.poll();
-                Slot slot = new Slot();
+                Slot slot = new Slot(next[0]);
                 requests.add(request);
                 unitSlots.add(slot);
                 slots.add(slot);
@@ -209,11 +223,9 @@ public final class Connection {
             return;
         }
         for (int i = 0; i < unitSlots.size(); i++) {
-            Slot slot = unitSlots.get(i);
-            slot.reply = error != null || replies == null || i >= replies.size()
+            complete(unitSlots.get(i), error != null || replies == null || i >= replies.size()
                     ? errorReply(error != null ? error : new IllegalStateException("missing reply"))
-                    : orNull(replies.get(i));
-            slot.done = true;
+                    : orNull(replies.get(i)));
         }
         writeCompleted();
         pump();
@@ -233,7 +245,7 @@ public final class Connection {
     }
 
     private void startBarrier(CommandHandler handler, Request request) {
-        Slot slot = new Slot();
+        Slot slot = new Slot(request.args()[0]);
         slot.barrier = true;
         slots.add(slot);
         barrierRunning = true;
@@ -252,8 +264,7 @@ public final class Connection {
         if (closed) {
             return;
         }
-        slot.reply = reply;
-        slot.done = true;
+        complete(slot, reply);
         if (slot.barrier) {
             barrierRunning = false;
         }

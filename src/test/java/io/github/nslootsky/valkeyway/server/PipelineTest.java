@@ -36,6 +36,7 @@ class PipelineTest {
     private final AtomicInteger inFlight = new AtomicInteger();
     private final AtomicInteger maxInFlight = new AtomicInteger();
     private final List<String> events = new CopyOnWriteArrayList<>();
+    private final List<String> answered = new CopyOnWriteArrayList<>();
     private RespServer server;
 
     /** "ASYNC <tag> <delayMs>": completes after the delay, off the network thread, with the tag. */
@@ -83,7 +84,9 @@ class PipelineTest {
                     Thread.sleep(50);
                     return Reply.bulk("B" + r.argString(0));
                 })
-                .register("inline", (InlineCommandHandler) r -> Reply.bulk("I" + r.argString(0)));
+                .register("inline", (InlineCommandHandler) r -> Reply.bulk("I" + r.argString(0)))
+                .listener((name, reply, nanos) -> answered.add(new String(name, StandardCharsets.US_ASCII)
+                        + (reply instanceof Reply.Error ? "!" : "") + (nanos >= 0 ? "" : "?")));
         server = new RespServer(new RespServer.Settings("127.0.0.1", 0, 2, 100, 0), table);
         server.start();
     }
@@ -222,6 +225,19 @@ class PipelineTest {
             assertEquals(bulk("Iok"), read(socket.getInputStream(), bulk("Iok").length()));
         }
         assertTrue(server.clients().size() <= 1);
+    }
+
+    @Test
+    void everyAnsweredCommandReachesTheListener() throws Exception {
+        start();
+        String requests = cmd("ASYNC", "a", "20") + cmd("INLINE", "1") + cmd("ASYNC", "b", "0") + cmd("ASYNC", "c", "0")
+                + cmd("BARRIER", "x");
+        String expected = bulk("a") + bulk("I1") + bulk("b") + bulk("c") + bulk("Bx");
+        try (Socket socket = send(requests)) {
+            assertEquals(expected, read(socket.getInputStream(), expected.length()));
+        }
+        assertEquals(List.of("ASYNC", "ASYNC", "ASYNC", "BARRIER", "INLINE"), answered.stream().sorted().toList(),
+                "one call per command, with its name, whichever path ran it");
     }
 
     private static String read(InputStream in, int length) throws Exception {

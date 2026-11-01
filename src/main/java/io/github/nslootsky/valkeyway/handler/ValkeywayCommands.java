@@ -30,9 +30,10 @@ public final class ValkeywayCommands {
                                       WatchClientPool watchPool, ValkeywayProperties props) {
         boolean coalesceRequests = props.glide().coalesceRequests();
         WatchSessions watches = new WatchSessions(watchPool);
-        CatchAllCommand catchAll = new CatchAllCommand(glideClientCache, metrics, blockingPool, coalesceRequests);
+        CatchAllCommand catchAll = new CatchAllCommand(glideClientCache, blockingPool, coalesceRequests);
         catchAll.warmUp();
         return new CommandTable(catchAll)
+                .listener(metrics)
                 .rejectInTransaction(request -> {
                     // Answered from proxy state (INFO, HELLO, SCAN, CLUSTER, PROXY), which a node
                     // can't reproduce inside EXEC. Like any queue-time error, this discards the transaction.

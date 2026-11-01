@@ -49,6 +49,17 @@ public final class CommandTable {
     }
 
     private CommandHandler rejectInTransaction;
+    private CommandListener listener = CommandListener.NONE;
+
+    /** Told about every answered command; see {@link CommandListener}. */
+    public CommandTable listener(CommandListener listener) {
+        this.listener = listener;
+        return this;
+    }
+
+    CommandListener listener() {
+        return listener;
+    }
 
     /** Answers commands whose handler declares {@link CommandHandler.InTransaction#REJECT} inside MULTI. */
     public CommandTable rejectInTransaction(CommandHandler handler) {
