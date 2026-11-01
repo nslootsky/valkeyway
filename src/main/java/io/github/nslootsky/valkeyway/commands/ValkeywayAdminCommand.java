@@ -138,7 +138,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
         c.put("host", props.host());
         c.put("port", Integer.toString(props.port()));
         c.put("cluster-nodes", String.join(",", props.clusterNodes()));
-        c.put("connect-timeout-ms", Long.toString(props.connectTimeoutMs()));
+        c.put("request-timeout-ms", Long.toString(props.requestTimeoutMs()));
         c.put("clients.max-clients", Integer.toString(props.clients().maxClients()));
         c.put("clients.timeout-seconds", Long.toString(props.clients().timeoutSeconds()));
         c.put("clients.io-threads", Integer.toString(props.clients().ioThreads()));

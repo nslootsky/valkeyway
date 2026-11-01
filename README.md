@@ -109,7 +109,7 @@ proxy:
     - "127.0.0.1:7000"
     - "127.0.0.1:7001"
     - "127.0.0.1:7002"
-  connect-timeout-ms: 2000      # Timeout per backend request, including Glide's retries (despite the name)
+  request-timeout-ms: 2000      # Timeout per backend request, including Glide's retries (old name connect-timeout-ms still works)
   blocking-pool:                # Dedicated backend clients for BLPOP, XREAD BLOCK, WAIT, ...
     max-size: 64                # Max blocking commands running at once; more wait for a free client
     idle-timeout-seconds: 60    # Close a pooled client after this long unused

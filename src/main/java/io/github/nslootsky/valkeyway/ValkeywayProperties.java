@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway;
 
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
@@ -12,13 +13,19 @@ import java.util.List;
 /**
  * Configuration properties for the proxy.
  * Prefix: proxy.*
+ *
+ * @param requestTimeoutMs timeout per backend request, including Glide's retries (default 2000, at
+ *        least 500)
+ * @param connectTimeoutMs the old name of {@code request-timeout-ms}, still accepted; reads back as
+ *        the effective request timeout
  */
 @ConfigurationProperties(prefix = "proxy")
 public record ValkeywayProperties(
     String host,
     int port,
     List<String> clusterNodes,
-    long connectTimeoutMs,
+    long requestTimeoutMs,
+    @Deprecated long connectTimeoutMs,
     BlockingPool blockingPool,
     Clients clients,
     Glide glide,
@@ -29,7 +36,13 @@ public record ValkeywayProperties(
         if (host == null || host.isBlank()) host = "0.0.0.0";
         if (port <= 0 || port > 65535) throw new IllegalArgumentException("Invalid port");
         if (clusterNodes == null || clusterNodes.isEmpty()) throw new IllegalArgumentException("clusterNodes required");
-        connectTimeoutMs = Math.max(connectTimeoutMs, 500);
+        if (requestTimeoutMs <= 0 && connectTimeoutMs > 0) {
+            LoggerFactory.getLogger(ValkeywayProperties.class).warn(
+                    "proxy.connect-timeout-ms is deprecated; use proxy.request-timeout-ms (it is a timeout per request, not per connection)");
+            requestTimeoutMs = connectTimeoutMs;
+        }
+        requestTimeoutMs = requestTimeoutMs <= 0 ? 2000 : Math.max(requestTimeoutMs, 500);
+        connectTimeoutMs = requestTimeoutMs;
         if (blockingPool == null) blockingPool = new BlockingPool(0, 0);
         if (clients == null) clients = new Clients(0, 0, 0);
         if (glide == null) glide = new Glide(0, null, null, 0);

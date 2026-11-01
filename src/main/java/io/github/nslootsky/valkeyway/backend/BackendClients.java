@@ -53,7 +53,7 @@ public class BackendClients {
 
     public BackendClients(ValkeywayProperties props) {
         this.clusterNodes = props.clusterNodes();
-        this.requestTimeout = (int) props.connectTimeoutMs();
+        this.requestTimeout = (int) props.requestTimeoutMs();
         this.inflightRequestsLimit = props.glide().inflightRequestsLimit();
         this.refreshTopologyFromSeeds = props.glide().refreshTopologyFromSeeds();
         this.topologyCheckSeconds = props.glide().topologyCheckSeconds();
