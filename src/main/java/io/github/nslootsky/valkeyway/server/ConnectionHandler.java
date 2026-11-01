@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLException;
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Per-channel glue between Netty and a {@link Connection}: hands decoded commands to it, applies
@@ -39,6 +40,17 @@ final class ConnectionHandler extends ChannelInboundHandlerAdapter {
         if (connection == null) {
             ctx.writeAndFlush(Reply.error("ERR max number of clients reached")).addListener(ChannelFutureListener.CLOSE);
             return;
+        }
+        long authTimeout = server.authTimeoutSeconds();
+        if (authTimeout > 0) {
+            // A client that doesn't authenticate in time is closed, so connections that never do
+            // can't hold client slots and buffers indefinitely.
+            ctx.executor().schedule(() -> {
+                if (connection.user() == null && ctx.channel().isActive()) {
+                    log.debug("Closing client {}: not authenticated within {}s", connection.id(), authTimeout);
+                    ctx.close();
+                }
+            }, authTimeout, TimeUnit.SECONDS);
         }
         ctx.fireChannelActive();
     }

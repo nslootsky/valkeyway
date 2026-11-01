@@ -64,6 +64,8 @@ public final class TlsContext {
     private final Settings settings;
     private volatile SslContext context;
     private volatile List<FileTime> loadedVersions;
+    /** Changed files seen at the last check, reloaded once they stay the same for another one. */
+    private List<FileTime> pendingVersions;
 
     public TlsContext(Settings settings) throws IOException {
         this.settings = settings;
@@ -76,8 +78,12 @@ public final class TlsContext {
         return context;
     }
 
-    /** Rebuilds the context if any of its files changed; on a bad file, keeps the old one. */
-    public void reloadIfChanged() {
+    /**
+     * Rebuilds the context if its files changed and have stayed unchanged since the previous check,
+     * so a rotation caught halfway (a new key next to the old certificate, which the JDK accepts) isn't
+     * loaded. On a file that can't be loaded, keeps the current context.
+     */
+    public synchronized void reloadIfChanged() {
         List<FileTime> versions;
         try {
             versions = versions();
@@ -86,6 +92,11 @@ public final class TlsContext {
             return;
         }
         if (versions.equals(loadedVersions)) {
+            pendingVersions = null;
+            return;
+        }
+        if (!versions.equals(pendingVersions)) {
+            pendingVersions = versions; // changed since the last check: wait until the files settle
             return;
         }
         try {

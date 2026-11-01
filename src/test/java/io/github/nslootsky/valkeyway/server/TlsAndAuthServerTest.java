@@ -58,7 +58,7 @@ class TlsAndAuthServerTest {
     private void start(TlsContext.ClientCerts clientCerts, boolean authRequired) throws Exception {
         TlsContext tls = new TlsContext(new TlsContext.Settings(certs.serverCert(), certs.serverKey(), null,
                 certs.caCert(), clientCerts, List.of()));
-        server = new RespServer(new RespServer.Settings("127.0.0.1", 0, 0, tls, 2, 100, 0, authRequired), table());
+        server = new RespServer(new RespServer.Settings("127.0.0.1", 0, 0, tls, 2, 100, 0, authRequired, 1), table());
         server.start();
     }
 
@@ -158,6 +158,18 @@ class TlsAndAuthServerTest {
     }
 
     @Test
+    void unauthenticatedConnectionsAreClosedAfterTheAuthTimeout() throws Exception {
+        start(TlsContext.ClientCerts.NONE, true); // 1 second
+        try (RawRespClient idle = new RawRespClient("127.0.0.1", server.port());
+             RawRespClient authenticated = new RawRespClient("127.0.0.1", server.port())) {
+            assertEquals(OK, authenticated.call("AUTH", "secret"));
+            Thread.sleep(1500);
+            assertThrows(IOException.class, () -> idle.call("PING"), "closed");
+            assertEquals(PONG, authenticated.call("PING"), "an authenticated client stays");
+        }
+    }
+
+    @Test
     void certificateFilesAreReloadedWhenTheyChange(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
         Path cert = Files.copy(certs.serverCert(), dir.resolve("server.crt"));
         Path key = Files.copy(certs.serverKey(), dir.resolve("server.key"));
@@ -170,12 +182,18 @@ class TlsAndAuthServerTest {
         Files.writeString(cert, "not a certificate");
         Files.setLastModifiedTime(cert, FileTime.from(Instant.now().plusSeconds(5)));
         tls.reloadIfChanged();
+        tls.reloadIfChanged();
         assertSame(first, tls.current(), "a bad file keeps the current certificate");
 
         Files.copy(certs.clientCert(), cert, StandardCopyOption.REPLACE_EXISTING);
-        Files.copy(certs.clientKey(), key, StandardCopyOption.REPLACE_EXISTING);
         Files.setLastModifiedTime(cert, FileTime.from(Instant.now().plusSeconds(10)));
         tls.reloadIfChanged();
-        assertNotSame(first, tls.current(), "a rotated certificate is picked up");
+        assertSame(first, tls.current(), "halfway through a rotation: wait");
+        Files.copy(certs.clientKey(), key, StandardCopyOption.REPLACE_EXISTING);
+        Files.setLastModifiedTime(key, FileTime.from(Instant.now().plusSeconds(10)));
+        tls.reloadIfChanged();
+        assertSame(first, tls.current(), "the files changed again since the last check: wait");
+        tls.reloadIfChanged();
+        assertNotSame(first, tls.current(), "unchanged for a check: picked up");
     }
 }

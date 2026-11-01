@@ -189,6 +189,53 @@ class ConnectionCommandsTest extends IntegrationTestBase {
         }
     }
 
+    /** A disconnected client's BLPOP ends: it doesn't pop the next value pushed, for nobody. */
+    @Test
+    void aDisconnectedClientsBlockingCommandEnds() throws Exception {
+        try (RawRespClient c = connect()) {
+            c.call("DEL", "conn:orphan");
+            for (int i = 0; i < 3; i++) {
+                RawRespClient blocked = connect();
+                blocked.send("BLPOP", "conn:orphan", "0");
+                long deadline = System.currentTimeMillis() + 5000;
+                while (!((String) c.call("INFO", "clients")).contains("blocked_clients:1")
+                        && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(10);
+                }
+                blocked.close();
+            }
+            Thread.sleep(500);
+            assertTrue(((String) c.call("INFO", "clients")).contains("blocked_clients:0"));
+            c.call("RPUSH", "conn:orphan", "kept");
+            Thread.sleep(200);
+            assertEquals(List.of("kept"), c.call("LRANGE", "conn:orphan", "0", "-1"), "no orphaned BLPOP took it");
+        }
+    }
+
+    @Test
+    void clusterCredentialsAreNotShown() throws Exception {
+        try (RawRespClient c = connect()) {
+            Object requirepass = c.call("CONFIG", "GET", "requirepass");
+            assertEquals(List.of("requirepass", "(redacted by the proxy)"), requirepass);
+            List<?> all = (List<?>) c.call("CONFIG", "GET", "*");
+            int i = all.indexOf("masterauth");
+            assertTrue(i >= 0 && "(redacted by the proxy)".equals(all.get(i + 1)), "masterauth in CONFIG GET *");
+            assertEquals(2, ((List<?>) c.call("CONFIG", "GET", "maxmemory")).size(), "other settings as usual");
+            assertInstanceOf(Error.class, c.call("ACL", "LIST"));
+            assertInstanceOf(Error.class, c.call("ACL", "GETUSER", "default"));
+            assertInstanceOf(List.class, c.call("ACL", "USERS"), "names only: allowed");
+        }
+    }
+
+    @Test
+    void selectingADatabaseTheClusterDoesntHave() throws Exception {
+        try (RawRespClient c = connect()) {
+            assertEquals(new Error("ERR DB index is out of range"), c.call("SELECT", "99"));
+            assertEquals(new Status("OK"), c.call("SELECT", "15"));
+            assertEquals(new Status("PONG"), c.call("PING"));
+        }
+    }
+
     @Test
     void importSourceAnswersAsWithImportModeOff() throws Exception {
         try (RawRespClient c = connect()) {

@@ -47,6 +47,7 @@ proxy:
     password:                   # The default user's password: AUTH <password>
     users:                      # Named users: AUTH <user> <password>
       app: ...
+    timeout-seconds: 10         # With a password, close connections not authenticated by then; 0 = never
   tls:                          # TLS for clients. See SECURITY.md.
     port: 0                     # TLS port; 0 = off
     cert-file:                  # PEM certificate chain (reloaded when it changes)

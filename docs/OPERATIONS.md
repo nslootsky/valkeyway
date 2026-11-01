@@ -26,6 +26,7 @@ Spring Boot Actuator, on the management port:
 |---|---|
 | `proxy.commands.processed` | Commands answered, tagged by command |
 | `proxy.errors` | Error replies |
+| `proxy.auth.failures` | AUTH attempts with a wrong user or password |
 | `proxy.commands.latency` | Command latency histogram |
 | `proxy.blocking.pool.in_use`, `.clients` | Blocking commands running; pooled backend clients open |
 | `proxy.blocking.pool.exhausted_waits` | Blocking commands that waited because the pool was full |

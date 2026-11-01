@@ -23,9 +23,11 @@ import java.util.List;
 public class HelloCommand implements InlineCommandHandler {
 
     private final Users users;
+    private final Runnable onAuthFailure;
 
-    public HelloCommand(Users users) {
+    public HelloCommand(Users users, Runnable onAuthFailure) {
         this.users = users;
+        this.onAuthFailure = onAuthFailure;
     }
 
     @Override
@@ -71,7 +73,7 @@ public class HelloCommand implements InlineCommandHandler {
             }
         }
         if (user != null) {
-            Reply auth = AuthCommand.authenticate(connection, users, user, password);
+            Reply auth = AuthCommand.authenticate(connection, users, user, password, onAuthFailure);
             if (auth instanceof Reply.Error) {
                 return auth;
             }

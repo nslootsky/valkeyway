@@ -155,7 +155,9 @@ public class ValkeywayAdminCommand implements CommandHandler {
         c.put("transactions.watch-pool.max-size", Integer.toString(props.transactions().watchPool().maxSize()));
         c.put("node-admin-commands", props.nodeAdminCommands().name().toLowerCase(Locale.ROOT));
         // Passwords are never shown, only whether they are set.
-        c.put("auth.password", props.auth().password() == null || props.auth().password().isEmpty() ? "" : "(set)");
+        // Whether the default user really has a password (also when it comes from auth.users.default).
+        String defaultPassword = props.auth().users().getOrDefault("default", props.auth().password());
+        c.put("auth.password", defaultPassword == null || defaultPassword.isEmpty() ? "" : "(set)");
         c.put("auth.users", String.join(",", new TreeSet<>(props.auth().users().keySet())));
         c.put("tls.port", Integer.toString(props.tls().port()));
         c.put("tls.client-certs", props.tls().clientCerts().name().toLowerCase(Locale.ROOT));

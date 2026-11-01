@@ -35,6 +35,12 @@ public class MetricsCollector implements CommandListener {
     private final Timer commandLatency;
     private final ConcurrentHashMap<String, Counter> perCommand = new ConcurrentHashMap<>();
     private final Counter other;
+    private final Counter authFailures;
+
+    /** A wrong user or password (AUTH, HELLO ... AUTH). */
+    public void authFailed() {
+        authFailures.increment();
+    }
 
     public MetricsCollector(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -48,6 +54,9 @@ public class MetricsCollector implements CommandListener {
                 .description("Command execution latency")
                 .register(meterRegistry);
         other = Counter.builder(PREFIX + ".commands.processed").tag("type", "OTHER").register(meterRegistry);
+        authFailures = Counter.builder(PREFIX + ".auth.failures")
+                .description("AUTH and HELLO AUTH attempts with a wrong user or password")
+                .register(meterRegistry);
     }
 
     /** Longer names can't be commands; counting them as such would let clients pick metric labels. */

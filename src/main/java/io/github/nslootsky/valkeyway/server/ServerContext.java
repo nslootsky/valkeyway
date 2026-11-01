@@ -24,11 +24,14 @@ final class ServerContext implements ClientRegistry {
     private final Executor executor;
     private final int maxClients;
     private final boolean authRequired;
+    private final long authTimeoutSeconds;
     private final AtomicLong nextId = new AtomicLong(1);
     private final Map<Long, Connection> clients = new ConcurrentHashMap<>();
 
-    ServerContext(CommandTable commands, Executor executor, int maxClients, boolean authRequired) {
+    ServerContext(CommandTable commands, Executor executor, int maxClients, boolean authRequired,
+                  long authTimeoutSeconds) {
         this.authRequired = authRequired;
+        this.authTimeoutSeconds = authTimeoutSeconds;
         this.commands = commands;
         this.executor = executor;
         this.maxClients = maxClients;
@@ -42,6 +45,11 @@ final class ServerContext implements ClientRegistry {
         Connection connection = new Connection(nextId.getAndIncrement(), channel, commands, executor, this, authRequired);
         clients.put(connection.id(), connection);
         return connection;
+    }
+
+    /** Seconds a connection may stay unauthenticated (when a password is required); 0 = forever. */
+    long authTimeoutSeconds() {
+        return authRequired ? authTimeoutSeconds : 0;
     }
 
     void unregister(Connection connection) {

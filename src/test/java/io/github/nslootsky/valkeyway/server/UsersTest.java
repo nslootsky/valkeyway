@@ -67,6 +67,12 @@ class UsersTest {
     }
 
     @Test
+    void theDefaultPasswordCanBeSetOnlyOnce() {
+        assertThrows(IllegalArgumentException.class, () -> new Users("a", Map.of("default", "b")));
+        assertThrows(IllegalArgumentException.class, () -> new Users("a", Map.of("default", "")));
+    }
+
+    @Test
     void aUserWithoutAPasswordIsAConfigurationError() {
         assertThrows(IllegalArgumentException.class, () -> new Users(null, Map.of("app", "")));
     }

@@ -80,6 +80,7 @@ public final class Connection {
         boolean resp3 = protocol == 3;
         /** A Pub/Sub message rather than a reply: never dropped by CLIENT REPLY. */
         boolean push;
+        long pushBytes;
 
         Slot(byte[] name) {
             this.name = name;
@@ -133,8 +134,9 @@ public final class Connection {
     private volatile boolean blockedOnNoKey;
     /** Ends the client's blocking command early (CLIENT UNBLOCK): true = with an error, false = as a timeout. */
     private volatile java.util.function.Consumer<Boolean> unblocker;
-    /** Pushed messages waiting behind replies or for the socket. Event loop only. */
+    /** Pushed messages waiting behind replies or for the socket, and their payload bytes. Event loop only. */
     private int pendingPushes;
+    private long pendingPushBytes;
     private boolean inTransaction;
     /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
     private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
@@ -331,6 +333,7 @@ public final class Connection {
             slots.poll();
             if (head.push) {
                 pendingPushes--;
+                pendingPushBytes -= head.pushBytes;
             }
             if (head.push || isPush(head.reply) || sendReply()) {
                 channel.write(head.resp3 ? new ReplyEncoder.Resp3(head.reply) : head.reply);
@@ -408,6 +411,12 @@ public final class Connection {
     void markClosed() {
         closed = true;
         waiting.clear();
+        // A blocking command must not outlive its client: it would hold a pooled backend client, and
+        // pop a value nobody receives. Ending it may call the cluster, so not on the event loop.
+        var hook = unblocker;
+        if (hook != null) {
+            Thread.ofVirtual().start(() -> hook.accept(false));
+        }
         for (ConnectionKey<?> key : List.copyOf(attributes.keySet())) {
             if (attributes.remove(key) instanceof AutoCloseable resource) {
                 try {
@@ -555,8 +564,11 @@ public final class Connection {
                 return;
             }
             var outbound = channel.unsafe().outboundBuffer();
-            if (pendingPushes >= MAX_PENDING_PUSHES
-                    || (outbound != null && outbound.totalPendingWriteBytes() > MAX_PENDING_PUSH_BYTES)) {
+            long bytes = payloadBytes(message);
+            // Both queues count: pushes held behind a slow command (BLPOP in RESP3, ...) and those
+            // the socket hasn't taken yet.
+            long queued = pendingPushBytes + bytes + (outbound != null ? outbound.totalPendingWriteBytes() : 0);
+            if (pendingPushes >= MAX_PENDING_PUSHES || queued > MAX_PENDING_PUSH_BYTES) {
                 log.warn("Disconnecting client {}: it isn't reading its Pub/Sub messages fast enough", id);
                 closed = true;
                 waiting.clear();
@@ -568,8 +580,10 @@ public final class Connection {
             slot.reply = message;
             slot.done = true;
             slot.push = true;
+            slot.pushBytes = bytes;
             slots.add(slot);
             pendingPushes++;
+            pendingPushBytes += bytes;
             writeCompleted();
         });
     }
@@ -621,6 +635,14 @@ public final class Connection {
         }
         hook.accept(withError);
         return true;
+    }
+
+    private static long payloadBytes(Reply.Push message) {
+        long bytes = 0;
+        for (Reply item : message.items()) {
+            bytes += item instanceof Reply.Bulk(byte[] value) ? value.length + 16 : 16;
+        }
+        return bytes;
     }
 
     /** Whether the client has subscriptions (set by the Pub/Sub commands). */

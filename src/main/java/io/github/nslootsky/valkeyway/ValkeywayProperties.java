@@ -41,7 +41,7 @@ public record ValkeywayProperties(
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
-        if (auth == null) auth = new Auth(null, null);
+        if (auth == null) auth = new Auth(null, null, null);
         if (tls == null) tls = new Tls(0, null, null, null, null, null, null);
         if (backend == null) backend = new Backend(null, null, null);
         if (port < 0 || port > 65535 || (port == 0 && tls.port() == 0)) {
@@ -163,10 +163,14 @@ public record ValkeywayProperties(
      *        clients must AUTH (or HELLO ... AUTH) before anything else. Unset = no authentication.
      * @param users    further users and their passwords, for {@code AUTH <user> <password>}. Every
      *        user can run every command; there are no ACL rules.
+     * @param timeoutSeconds with a password, close connections that haven't authenticated after this
+     *        long (default 10); 0 = never
      */
-    public record Auth(String password, Map<String, String> users) {
+    public record Auth(String password, Map<String, String> users, Long timeoutSeconds) {
         public Auth {
             if (users == null) users = Map.of();
+            if (timeoutSeconds == null) timeoutSeconds = 10L;
+            if (timeoutSeconds < 0) throw new IllegalArgumentException("proxy.auth.timeout-seconds can't be negative");
         }
 
         /** Without the passwords, should this ever be logged. */

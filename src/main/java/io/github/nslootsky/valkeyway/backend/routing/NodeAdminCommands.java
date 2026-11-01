@@ -65,9 +65,16 @@ public final class NodeAdminCommands {
             if (subcommands.contains(sub)) {
                 return error((name + " " + sub).toUpperCase(Locale.ROOT));
             }
+            if (name.equals("acl") && CREDENTIAL_READS.contains(sub)) {
+                return "ERR ACL " + sub.toUpperCase(Locale.ROOT) + " would show the cluster's credentials and is not "
+                        + "allowed through the proxy; send it to a node directly (or set proxy.node-admin-commands=forward)";
+            }
         }
         return null;
     }
+
+    /** ACL subcommands that show the cluster users' password hashes. */
+    private static final Set<String> CREDENTIAL_READS = Set.of("list", "getuser");
 
     private static String error(String command) {
         return "ERR " + command + " administers a single node and is not allowed through the proxy; send it to the "
