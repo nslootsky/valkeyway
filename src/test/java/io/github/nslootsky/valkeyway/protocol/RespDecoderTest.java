@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.protocol;
 
+import java.util.Random;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
@@ -113,7 +114,7 @@ class RespDecoderTest {
 
     @Test
     void randomCommandsSurviveRandomSplitting() {
-        java.util.Random random = new java.util.Random(42);
+        Random random = new Random(42);
         List<List<String>> expected = new ArrayList<>();
         StringBuilder stream = new StringBuilder();
         for (int c = 0; c < 500; c++) {

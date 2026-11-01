@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.Collections;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Status;
 import org.junit.jupiter.api.Test;
 
@@ -118,7 +119,7 @@ class PipelineOrderingTest extends IntegrationTestBase {
     void manyConnectionsPipeliningAtOnce() throws Exception {
         int connections = 50;
         List<Thread> threads = new ArrayList<>();
-        List<Throwable> failures = java.util.Collections.synchronizedList(new ArrayList<>());
+        List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
         for (int t = 0; t < connections; t++) {
             int id = t;
             threads.add(Thread.ofVirtual().start(() -> {

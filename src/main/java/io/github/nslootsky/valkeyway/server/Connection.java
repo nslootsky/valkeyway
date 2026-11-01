@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.server;
 
+import java.util.concurrent.CompletionException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -16,10 +17,9 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.CompletionStage;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
@@ -62,10 +62,16 @@ public final class Connection {
 
     /** A reply position, in request order. */
     private static final class Slot {
+        final byte[] name;
+        final long started = System.nanoTime();
         Reply reply;
         boolean done;
         boolean barrier;
         boolean closeAfter;
+
+        Slot(byte[] name) {
+            this.name = name;
+        }
     }
 
     private final long id;
@@ -73,6 +79,7 @@ public final class Connection {
     private final EventLoop loop;
     private final CommandTable commands;
     private final Executor executor;
+    private final CommandListener listener;
 
     // Event loop only.
     private final ArrayDeque<byte[][]> waiting = new ArrayDeque<>();
@@ -91,11 +98,8 @@ public final class Connection {
     private int db;
     private String name;
     private boolean inTransaction;
-    private List<byte[][]> transactionCommands = new ArrayList<>();
-    private Set<Integer> transactionSlots = new HashSet<>();
-    private String transactionError;
-    private String scanCursorId;
-    private volatile AutoCloseable watchSession;
+    /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
+    private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
 
     Connection(long id, Channel channel, CommandTable commands, Executor executor) {
         this.id = id;
@@ -103,6 +107,7 @@ public final class Connection {
         this.loop = channel.eventLoop();
         this.commands = commands;
         this.executor = executor;
+        this.listener = commands.listener();
     }
 
     // --- command execution (event loop) ---
@@ -154,10 +159,16 @@ public final class Connection {
     }
 
     private void addInline(CommandHandler handler, Request request) {
-        Slot slot = new Slot();
-        slot.reply = execute(handler, request);
-        slot.done = true;
+        Slot slot = new Slot(request.args()[0]);
         slots.add(slot);
+        complete(slot, execute(handler, request));
+    }
+
+    /** Records a slot's reply and tells the listener. Event loop only. */
+    private void complete(Slot slot, Reply reply) {
+        slot.reply = reply;
+        slot.done = true;
+        listener.answered(slot.name, reply, System.nanoTime() - slot.started);
     }
 
     /**
@@ -168,7 +179,7 @@ public final class Connection {
         List<Request> requests = new ArrayList<>();
         List<Slot> unitSlots = new ArrayList<>();
         requests.add(first);
-        Slot firstSlot = new Slot();
+        Slot firstSlot = new Slot(first.args()[0]);
         unitSlots.add(firstSlot);
         slots.add(firstSlot);
         byte[][] next;
@@ -177,7 +188,7 @@ public final class Connection {
             CommandHandler h = commands.lookup(next[0], inTransaction);
             if (h == handler && handler.canRunAsync(request)) {
                 waiting.poll();
-                Slot slot = new Slot();
+                Slot slot = new Slot(next[0]);
                 requests.add(request);
                 unitSlots.add(slot);
                 slots.add(slot);
@@ -209,11 +220,9 @@ public final class Connection {
             return;
         }
         for (int i = 0; i < unitSlots.size(); i++) {
-            Slot slot = unitSlots.get(i);
-            slot.reply = error != null || replies == null || i >= replies.size()
+            complete(unitSlots.get(i), error != null || replies == null || i >= replies.size()
                     ? errorReply(error != null ? error : new IllegalStateException("missing reply"))
-                    : orNull(replies.get(i));
-            slot.done = true;
+                    : orNull(replies.get(i)));
         }
         writeCompleted();
         pump();
@@ -233,7 +242,7 @@ public final class Connection {
     }
 
     private void startBarrier(CommandHandler handler, Request request) {
-        Slot slot = new Slot();
+        Slot slot = new Slot(request.args()[0]);
         slot.barrier = true;
         slots.add(slot);
         barrierRunning = true;
@@ -252,8 +261,7 @@ public final class Connection {
         if (closed) {
             return;
         }
-        slot.reply = reply;
-        slot.done = true;
+        complete(slot, reply);
         if (slot.barrier) {
             barrierRunning = false;
         }
@@ -311,7 +319,7 @@ public final class Connection {
     }
 
     private static Reply errorReply(Throwable e) {
-        Throwable cause = e instanceof java.util.concurrent.CompletionException && e.getCause() != null ? e.getCause() : e;
+        Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
         return Reply.error("ERR " + (cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage()));
     }
 
@@ -342,13 +350,13 @@ public final class Connection {
     void markClosed() {
         closed = true;
         waiting.clear();
-        AutoCloseable watch = watchSession;
-        watchSession = null;
-        if (watch != null) {
-            try {
-                watch.close();
-            } catch (Exception e) {
-                log.warn("Failed to release the watch of a closed connection", e);
+        for (ConnectionKey<?> key : List.copyOf(attributes.keySet())) {
+            if (attributes.remove(key) instanceof AutoCloseable resource) {
+                try {
+                    resource.close();
+                } catch (Exception e) {
+                    log.warn("Failed to release {} of a closed connection", key, e);
+                }
             }
         }
     }
@@ -398,49 +406,32 @@ public final class Connection {
         this.inTransaction = inTransaction;
     }
 
-    public List<byte[][]> transactionCommands() {
-        return transactionCommands;
-    }
-
-    public Set<Integer> transactionSlots() {
-        return transactionSlots;
-    }
-
-    public String transactionError() {
-        return transactionError;
-    }
-
-    public void transactionError(String error) {
-        this.transactionError = error;
-    }
-
-    /** Leaves MULTI and forgets everything queued. */
-    public void clearTransaction() {
-        inTransaction = false;
-        transactionCommands = new ArrayList<>();
-        transactionSlots = new HashSet<>();
-        transactionError = null;
-    }
-
     /** Whether the client has disconnected (or is being disconnected). */
     public boolean isClosed() {
         return closed;
     }
 
-    /** The connection's watched keys on a dedicated backend client, or {@code null}. Closed on disconnect. */
-    public AutoCloseable watchSession() {
-        return watchSession;
+    /** The handler state stored under {@code key}, or {@code null}. */
+    @SuppressWarnings("unchecked")
+    public <T> T get(ConnectionKey<T> key) {
+        return (T) attributes.get(key);
     }
 
-    public void watchSession(AutoCloseable watchSession) {
-        this.watchSession = watchSession;
+    /**
+     * Stores handler state under {@code key} ({@code null} removes it). State that is
+     * {@link AutoCloseable} is closed when the client disconnects.
+     */
+    public <T> void set(ConnectionKey<T> key, T value) {
+        if (value == null) {
+            attributes.remove(key);
+        } else {
+            attributes.put(key, value);
+        }
     }
 
-    public String scanCursorId() {
-        return scanCursorId;
-    }
-
-    public void scanCursorId(String scanCursorId) {
-        this.scanCursorId = scanCursorId;
+    /** Removes and returns the state stored under {@code key}. */
+    @SuppressWarnings("unchecked")
+    public <T> T remove(ConnectionKey<T> key) {
+        return (T) attributes.remove(key);
     }
 }

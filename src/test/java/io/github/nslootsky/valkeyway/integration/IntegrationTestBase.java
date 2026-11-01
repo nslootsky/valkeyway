@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import io.github.nslootsky.valkeyway.ValkeywayApplication;
 import org.junit.jupiter.api.Tag;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalManagementPort;
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Tag("integration")
 @SpringBootTest(
-        classes = io.github.nslootsky.valkeyway.ValkeywayApplication.class,
+        classes = ValkeywayApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "proxy.host=0.0.0.0",

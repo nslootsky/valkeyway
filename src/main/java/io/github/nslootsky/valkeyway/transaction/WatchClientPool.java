@@ -7,9 +7,9 @@ package io.github.nslootsky.valkeyway.transaction;
 
 import glide.api.GlideClusterClient;
 import io.github.nslootsky.valkeyway.ValkeywayProperties;
-import io.github.nslootsky.valkeyway.blocking.DedicatedClients;
-import io.github.nslootsky.valkeyway.blocking.LeasePool;
-import io.github.nslootsky.valkeyway.cache.GlideClientCache;
+import io.github.nslootsky.valkeyway.backend.DedicatedClients;
+import io.github.nslootsky.valkeyway.backend.LeasePool;
+import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Component;
@@ -29,10 +29,10 @@ public class WatchClientPool {
     private final DedicatedClients clients;
     private final long acquireTimeoutMs;
 
-    public WatchClientPool(ValkeywayProperties props, GlideClientCache glideClientCache, MeterRegistry registry) {
+    public WatchClientPool(ValkeywayProperties props, BackendClients backendClients, MeterRegistry registry) {
         ValkeywayProperties.WatchPool config = props.transactions().watchPool();
         this.clients = new DedicatedClients("watch", config.maxSize(), config.idleTimeoutSeconds(),
-                glideClientCache, registry, "proxy.watch.pool");
+                backendClients, registry, "proxy.watch.pool");
         this.acquireTimeoutMs = config.acquireTimeoutMs();
     }
 

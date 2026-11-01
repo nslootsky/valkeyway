@@ -63,29 +63,30 @@ valkey-cli GET mykey
 Clients (RESP2, no cluster support needed)
          │
          ▼
-┌──────────────────────────────────────────────┐
-│  ValkeyWay :6379                             │
-│                                              │
-│  Netty RESP server (epoll/NIO, 2 threads)    │
-│    RespDecoder / ReplyEncoder                │
-│    Connection: per-client state; replies in  │
-│      order; one backend unit in flight       │
-│    CommandTable                              │
-│      ├─ PING ECHO TIME QUIT HELLO INFO ...   │
-│      ├─ SELECT, MULTI/EXEC/DISCARD, SCAN     │
-│      ├─ blocking commands                    │
-│      │    → BlockingClientPool               │
-│      └─ everything else → CatchAllCommand    │
-│           pipeline → one ClusterBatch        │
-│           single commands → coalesced into   │
-│             batches across connections       │
-│    Resp2Shapes / GlideReplies / ServerErrors │
-│      (RESP2 reply shapes and error codes)    │
-│                                              │
-│  GlideClientCache: one GlideClusterClient    │
-│  per database (valkey-glide: slot routing,   │
-│  MOVED/ASK, multi-slot splitting, topology)  │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│  ValkeyWay :6379                               │
+│                                                │
+│  server: Netty RESP server (epoll/NIO)         │
+│    RespDecoder / ReplyEncoder                  │
+│    Connection: per-client state; replies in    │
+│      order; one backend unit in flight         │
+│    CommandTable → commands                     │
+│      ├─ PING ECHO TIME HELLO INFO SCAN ...     │
+│      ├─ MULTI/EXEC/WATCH → transaction         │
+│      ├─ blocking commands → blocking           │
+│      │    (dedicated clients)                  │
+│      └─ everything else → CatchAllCommand      │
+│                                                │
+│  backend: Backend (single commands,            │
+│    pipelines), Coalescer (batches across       │
+│    connections), BackendClients (one Glide     │
+│    client per database)                        │
+│    routing: slots, key specs, explicit routes  │
+│    replies: RESP2 shapes, error codes          │
+│                                                │
+│  valkey-glide: slot routing, MOVED/ASK,        │
+│    multi-slot splitting, topology              │
+└────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────┐ ┌──────────┐ ┌──────────┐
@@ -287,5 +288,6 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - A primary that hangs without closing its connections isn't routed around until it answers again (see [Cluster changes](#cluster-changes)).
 - CLIENT commands (CLIENT LIST, CLIENT KILL, ...) go to a backend node and describe the proxy's backend connections, not the proxy's clients.
 - PROXY STATS and PROXY CLIENTINFO return placeholder values.
-- SCAN cursors are UUIDs rather than numbers; `0` still marks the end.
+- SCAN cursors are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one) and only in the database it started in.
+- SCAN returns keys whose bytes aren't valid UTF-8 with those bytes replaced, and MATCH patterns with such bytes match nothing (a Glide limitation). Other commands are binary-safe.
 - Set replies (SMEMBERS, SINTER, ...) contain the right members, but not necessarily in the server's iteration order.

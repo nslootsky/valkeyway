@@ -84,11 +84,6 @@ class DirectNodes implements AutoCloseable {
         return (String) at(address).call("CLUSTER", "MYID");
     }
 
-    /** Whether {@code address} currently considers itself a primary. */
-    boolean isPrimary(String address) throws IOException {
-        return "master".equals(((List<?>) at(address).call("ROLE")).getFirst());
-    }
-
     /** The address of a replica of the primary at {@code primary}. */
     String replicaOf(String primary) throws IOException {
         String id = nodeId(primary);

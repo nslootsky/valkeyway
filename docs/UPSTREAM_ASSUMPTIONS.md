@@ -60,21 +60,21 @@ We rely on this twice:
 - **Coalesced batches:** commands from a coalesced batch that come back with one of these codes, or with a G2 "did not run" error, are resent alone.
 - **Client pipelines:** they keep the errors.
 
-- **Code:** `ServerErrors.REJECTED_UNRUN` and `rejectedWithoutRunning`, `CatchAllCommand.Coalescer.sendBatch`.
+- **Code:** `ServerErrors.REJECTED_UNRUN` and `rejectedWithoutRunning`, `Coalescer`.
 - **Live test:** `TopologyChangeTest.multiKeyCommandsWaitOutAMigration`. It fails if coalesced commands start surfacing TRYAGAIN, or if pipelines stop surfacing it (meaning Glide started retrying in batches).
 
 ### G4: A non-atomic batch keeps order; separate requests don't
 
 Glide executes a non-atomic `ClusterBatch` in order on each node, but it can reorder requests submitted separately, even from one thread to one node. This is why a connection has only one backend unit (a single command or a batch) in flight at a time.
 
-- **Code:** `Connection` (class comment, `startUnit`), `CatchAllCommand.executeBatchAsync`.
+- **Code:** `Connection` (class comment, `startUnit`), `Backend.pipeline`.
 - **Live test:** `PipelineOrderingTest`.
 
 ### G5: Unrouted `customCommand` scrambles top-level map replies
 
 Without a route, `ClusterValue.of()` treats any reply whose top level is a map as a multi-node result keyed by node address. It rebuilds the reply as an unordered `HashMap` and decodes its keys as UTF-8, which loses order and corrupts binary keys (valkey-glide #4963). With an explicit single-node route, the reply comes back untouched. Batch results don't go through `ClusterValue`.
 
-- **Code:** `SlotRoutes`, `MapReplyCommands`, `CatchAllCommand.send`.
+- **Code:** `SlotRoutes`, `MapReplyCommands`, `Backend.send`.
 - **Live test:** `DifferentialRepliesTest` (HGETALL, ZRANGE WITHSCORES, XRANGE with binary fields, compared byte for byte with a direct connection).
 
 ### G6: Glide reshapes replies by command name
@@ -106,7 +106,7 @@ With binary output (`withBinaryOutput`, and `GlideString` arguments to `customCo
 - With `refreshTopologyFromInitialNodes`, every refresh re-resolves the configured seeds and asks them. If they can't be reached, Glide falls back to its existing connections (`calculate_topology_from_random_nodes`, `get_random_connections_from_initial_nodes`).
 - Slot refreshes are throttled to one per 15 s plus up to 15 s of jitter (`redis-rs/cluster_topology.rs`, `DEFAULT_SLOTS_REFRESH_WAIT_DURATION`, `DEFAULT_SLOTS_REFRESH_MAX_JITTER_MILLI`). This throttle can't be configured from Java.
 
-- **Code:** `GlideClientCache` (`buildConfig`), `ValkeywayProperties.Glide` (`refreshTopologyFromSeeds`, `topologyCheckSeconds`).
+- **Code:** `BackendClients` (`buildConfig`), `ValkeywayProperties.Glide` (`refreshTopologyFromSeeds`, `topologyCheckSeconds`).
 - **Live test:** `SeedDnsTest` (refresh from seeds, fallback), `TopologyChangeTest.trafficRecoversAfterAPrimaryStopsResponding` (hung primary; it would start recovering sooner if Glide fixes this).
 
 ### G9: Glide's default in-flight limit is 1000 requests per client
@@ -122,7 +122,7 @@ While a slot is migrating, the source node answers with ASK for a key that has a
 
 The node rejected the command without running it, so a single command that comes back with a redirect is resent as a one-command batch. Other errors Glide has already retried on this path (TRYAGAIN, CLUSTERDOWN, ...) are not resent, since that would only double the wait during an outage. Worth reporting upstream.
 
-- **Code:** `ServerErrors.isUnfollowedRedirect`, `CatchAllCommand.send` and `sendAsBatch`.
+- **Code:** `ServerErrors.isUnfollowedRedirect`, `Backend.send`.
 - **Live test:** `TopologyChangeTest.askRedirectsDuringAMigrationAreFollowed` (3,000 GETs during a migration). Re-check with `proxy.glide.coalesce-requests=false`, which sends every command alone.
 
 ### G11: One Glide client multiplexes one connection per node
@@ -131,6 +131,13 @@ A `GlideClusterClient` sends all its requests for a node over one connection. Co
 
 - **Code:** `WatchClientPool`, `WatchSession`, `WatchCommand`, `ExecCommand`.
 - **Live test:** `WatchTest` (two and three clients interleaving WATCH, UNWATCH and EXEC).
+
+### G12: Glide's cluster scan isn't binary-safe
+
+`GlideClusterClient.scan` and `scanBinary` replace bytes that aren't valid UTF-8 with U+FFFD, both in the keys they return and in the MATCH pattern. (`CommandManager.submitClusterScanToJni` passes the pattern on as a Java `String`, `options.getMatchPattern().toString()`, even when it was given as a binary `GlideString`, and the keys come back decoded the same way.) A key `\xffkey` comes back from SCAN as `\xef\xbf\xbdkey`, and a pattern with such bytes matches nothing. Other commands are binary-safe. Fixing it on our side would mean implementing cluster-wide SCAN ourselves, node by node, and losing Glide's handling of slots that move during a scan, so this is documented instead. Worth reporting upstream.
+
+- **Code:** `ScanCommand`.
+- **Live test:** `ScanFidelityTest.glideCorruptsNonUtf8KeysInScan` pins the current behavior and fails once Glide fixes it.
 
 ---
 
@@ -166,7 +173,7 @@ Everything else gets `$-1`. These come from the `addReplyNullArray` call sites.
 
 `<id> <ip:port@cport[,hostname]> <flags> <primary> <ping-sent> <pong-recv> <epoch> <link-state> <slots…>`. The flags we skip on are `fail`, `fail?`, `handshake` and `noaddr`. We use this to seed new clients from the live topology when the configured seeds can't be reached.
 
-- **Code:** `GlideClientCache.parseClusterNodes`.
+- **Code:** `BackendClients.parseClusterNodes`.
 - **Live test:** `SeedDnsTest.newClientsFallBackToKnownNodesWhenTheSeedsAreGone`.
 
 ### V4: COMMAND key specs and movable keys
@@ -180,7 +187,7 @@ Key positions come from the legacy `first`/`last`/`step` fields of the COMMAND r
 
 A command that can block holds its connection on the server, so it must not run on Glide's shared multiplexed connection. The list and the timeout positions and units follow the Valkey command reference: BLPOP-style commands take seconds as the last argument, XREAD/XREADGROUP take `BLOCK <ms>`, and WAIT/WAITAOF take ms. So do the replies they send on timeout (V2).
 
-- **Code:** `BlockingCommands`.
+- **Code:** `BlockingCommands`, `BlockingCommandRunner`.
 - **Live test:** `BlockingCommandsTest` (integration).
 
 ### V6: Queue-time errors inside MULTI
@@ -194,5 +201,5 @@ Valkey answers a command queued in MULTI that can't run, and the transaction is 
 
 The proxy checks unknown commands and arity itself, from the COMMAND table, since it queues transactions rather than sending MULTI ahead.
 
-- **Code:** `CommandKeyExtractor.queueError` and `notAllowedInTransaction`, `CatchAllCommand.queueTransactionCommand`, `MultiCommand`, `WatchCommand`.
+- **Code:** `CommandKeyExtractor.queueError` and `notAllowedInTransaction`, `TransactionQueue`, `MultiCommand`, `WatchCommand`.
 - **Live test:** `TransactionFidelityTest` (proxy and a direct node compared byte for byte).

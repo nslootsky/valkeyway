@@ -5,9 +5,11 @@
 
 package io.github.nslootsky.valkeyway.blocking;
 
+import io.github.nslootsky.valkeyway.backend.LeasePool;
+import io.github.nslootsky.valkeyway.backend.DedicatedClients;
 import glide.api.GlideClusterClient;
 import io.github.nslootsky.valkeyway.ValkeywayProperties;
-import io.github.nslootsky.valkeyway.cache.GlideClientCache;
+import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Component;
@@ -24,10 +26,10 @@ public class BlockingClientPool {
 
     private final DedicatedClients clients;
 
-    public BlockingClientPool(ValkeywayProperties props, GlideClientCache glideClientCache, MeterRegistry registry) {
+    public BlockingClientPool(ValkeywayProperties props, BackendClients backendClients, MeterRegistry registry) {
         ValkeywayProperties.BlockingPool config = props.blockingPool();
         this.clients = new DedicatedClients("blocking-command", config.maxSize(), config.idleTimeoutSeconds(),
-                glideClientCache, registry, "proxy.blocking.pool");
+                backendClients, registry, "proxy.blocking.pool");
     }
 
     /**

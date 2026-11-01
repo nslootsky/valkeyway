@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.transaction;
 
+import io.github.nslootsky.valkeyway.server.ConnectionKey;
 import io.github.nslootsky.valkeyway.server.Connection;
 
 /** Starts, looks up and ends each connection's {@link WatchSession}. */
@@ -16,9 +17,11 @@ public final class WatchSessions {
         this.pool = pool;
     }
 
+    private static final ConnectionKey<WatchSession> KEY = ConnectionKey.of("watch");
+
     /** The connection's session, or {@code null} if it has nothing watched. */
     public WatchSession current(Connection connection) {
-        return (WatchSession) connection.watchSession();
+        return connection.get(KEY);
     }
 
     /**
@@ -39,7 +42,7 @@ public final class WatchSessions {
             return null;
         }
         session = new WatchSession(lease, connection.db());
-        connection.watchSession(session);
+        connection.set(KEY, session);
         if (connection.isClosed()) {
             // Disconnected meanwhile; its close may have missed the new session.
             end(connection);
@@ -54,9 +57,7 @@ public final class WatchSessions {
 
     /** Detaches the session from the connection and returns it (EXEC takes it over). */
     public WatchSession take(Connection connection) {
-        WatchSession session = current(connection);
-        connection.watchSession(null);
-        return session;
+        return connection.remove(KEY);
     }
 
     /** Drops the connection's watches (UNWATCH, DISCARD). */

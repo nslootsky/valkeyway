@@ -5,7 +5,6 @@
 
 package io.github.nslootsky.valkeyway.protocol;
 
-import io.github.nslootsky.valkeyway.reply.DoubleFormat;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;

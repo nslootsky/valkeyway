@@ -5,10 +5,11 @@
 
 package io.github.nslootsky.valkeyway.transaction;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import glide.api.GlideClusterClient;
 import glide.api.models.GlideString;
-import io.github.nslootsky.valkeyway.blocking.LeasePool;
-import io.github.nslootsky.valkeyway.cluster.ClusterSlots;
+import io.github.nslootsky.valkeyway.backend.LeasePool;
+import io.github.nslootsky.valkeyway.backend.routing.ClusterSlots;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -28,7 +29,7 @@ public final class WatchSession implements AutoCloseable {
     private final Set<Integer> slots = new HashSet<>();
     private byte[] firstKey;
     private volatile boolean broken;
-    private final java.util.concurrent.atomic.AtomicBoolean released = new java.util.concurrent.atomic.AtomicBoolean();
+    private final AtomicBoolean released = new AtomicBoolean();
 
     WatchSession(LeasePool<Integer, GlideClusterClient>.Lease lease, int db) {
         this.lease = lease;
@@ -91,7 +92,7 @@ public final class WatchSession implements AutoCloseable {
             return;
         }
         lease.resource().customCommand(new GlideString[]{GlideString.of("UNWATCH")})
-                .whenComplete((reply, error) -> {
+                .whenComplete((_, error) -> {
                     if (error != null) {
                         lease.discard();
                     }

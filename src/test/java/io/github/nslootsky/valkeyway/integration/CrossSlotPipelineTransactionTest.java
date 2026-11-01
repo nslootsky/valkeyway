@@ -48,7 +48,7 @@ class CrossSlotPipelineTransactionTest extends IntegrationTestBase {
             c.call("SET", "xsp:a", "3");
             c.call("SET", "xsp:b", "4");
             Object reply = c.call("EXEC");
-            assertTrue(reply instanceof Error e && e.message().startsWith("CROSSSLOT "), "got " + reply);
+            assertTrue(reply instanceof Error(String message) && message.startsWith("CROSSSLOT "), "got " + reply);
         }
     }
 }

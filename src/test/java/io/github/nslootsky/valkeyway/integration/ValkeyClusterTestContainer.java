@@ -27,7 +27,6 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
     private final List<GenericContainer<?>> nodes = new ArrayList<>();
     private final List<String> members = new ArrayList<>();
     private final List<String> spares = new ArrayList<>();
-    private final int primaries;
     private final int replicasPerPrimary;
 
     public ValkeyClusterTestContainer(int numNodes) {
@@ -36,7 +35,6 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
 
     public ValkeyClusterTestContainer(int primaries, int replicasPerPrimary, int spareNodes, int basePort,
                                       int nodeTimeoutMs, String extraArgs) {
-        this.primaries = primaries;
         this.replicasPerPrimary = replicasPerPrimary;
         int memberCount = primaries * (1 + replicasPerPrimary);
         for (int i = 0; i < memberCount + spareNodes; i++) {
@@ -90,7 +88,7 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
         awaitHealthy(Duration.ofSeconds(60));
     }
 
-    /** Waits until every member reports cluster_state:ok and sees {@code primaries} primaries with slots. */
+    /** Waits until every member reports cluster_state:ok and every replica has finished its initial sync. */
     public void awaitHealthy(Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (true) {
@@ -144,9 +142,6 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
         return nodes.get(index);
     }
 
-    public int primaries() {
-        return primaries;
-    }
 
     public String getNodeAddress(int index) {
         return members.get(index);

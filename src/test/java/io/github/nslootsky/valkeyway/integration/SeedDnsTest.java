@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.integration;
 
+import java.util.concurrent.TimeUnit;
 import io.github.nslootsky.valkeyway.integration.RawRespClient.Status;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -79,7 +80,7 @@ class SeedDnsTest {
 
     @AfterAll
     static void stop() {
-        Stream.of(proxy, clusterA, clusterB).filter(c -> c != null).forEach(GenericContainer::stop);
+        Stream.of(proxy, clusterA, clusterB).filter(java.util.Objects::nonNull).forEach(GenericContainer::stop);
         if (network != null) {
             network.close();
         }
@@ -101,7 +102,7 @@ class SeedDnsTest {
                 }
             });
             System.out.printf("Followed the re-pointed seed in %d ms%n",
-                    java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - repointedAt));
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - repointedAt));
             assertEquals(new Status("OK"), client.call("SET", "cutover", "done"));
             assertEquals("done", valkey(clusterB, "GET", "cutover"), "writes go to the new cluster");
             assertEquals("", valkey(clusterA, "GET", "cutover"), "and not to the old one, which is still up");
