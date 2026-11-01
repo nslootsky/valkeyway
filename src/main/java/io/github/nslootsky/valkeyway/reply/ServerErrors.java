@@ -68,8 +68,12 @@ public final class ServerErrors {
     public static boolean rejectedWithoutRunning(Reply.Error error) {
         String message = error.message();
         int space = message.indexOf(' ');
-        return REJECTED_UNRUN.contains(space < 0 ? message : message.substring(0, space));
+        return REJECTED_UNRUN.contains(space < 0 ? message : message.substring(0, space))
+                || (message.startsWith(BACKEND_UNAVAILABLE) && message.endsWith(DID_NOT_RUN));
     }
+
+    private static final String BACKEND_UNAVAILABLE = "ERR backend unavailable: ";
+    private static final String DID_NOT_RUN = "; the command did not run";
 
     /** An error reply for {@code e}, unwrapping {@link ExecutionException}. */
     public static Reply error(Throwable e) {
@@ -79,6 +83,44 @@ public final class ServerErrors {
 
     /** Converts a Glide/Java exception message to "CODE detail". */
     public static String message(String msg) {
+        return backendFailure(serverFormat(msg));
+    }
+
+    /** A redirect Glide returned because it couldn't follow it: "MOVED 3739 127.0.0.1:7003; ExtensionError". */
+    private static final Pattern UNFOLLOWED_REDIRECT = Pattern.compile("^(?:MOVED|ASK) (\\d+) (\\S+?);?(?: .*)?$");
+
+    /** Glide's "no connection to this node (yet)", e.g. "... ConnectionNotFoundForRoute: 127.0.0.1:7003`...". */
+    private static final Pattern NO_CONNECTION = Pattern.compile("ConnectionNotFoundForRoute: ([^`\\s]+)");
+
+    /**
+     * Rewrites Glide's messages for an unreachable or lost node, which mean nothing to a client of a
+     * standalone server (a raw MOVED even makes Jedis throw JedisMovedDataException), as
+     * "ERR backend unavailable: ...", saying whether the command may have run.
+     */
+    private static String backendFailure(String m) {
+        Matcher redirect = UNFOLLOWED_REDIRECT.matcher(m);
+        if (redirect.matches()) {
+            return BACKEND_UNAVAILABLE + "can't reach " + redirect.group(2) + " (slot " + redirect.group(1) + ")"
+                    + DID_NOT_RUN;
+        }
+        if (!m.startsWith("ERR ")) {
+            return m;
+        }
+        Matcher noConnection = NO_CONNECTION.matcher(m);
+        if (noConnection.find()) {
+            return BACKEND_UNAVAILABLE + "no connection to " + noConnection.group(1) + DID_NOT_RUN;
+        }
+        if (m.contains("BrokenPipe") || m.contains("Failed to receive command response")
+                || m.startsWith("ERR Received connection error")) {
+            return BACKEND_UNAVAILABLE + "lost the connection to a cluster node; the command may or may not have run";
+        }
+        if (m.equals("ERR Request timed out") || m.equals("ERR timed out")) {
+            return "ERR backend request timed out; the command may or may not have run";
+        }
+        return m;
+    }
+
+    private static String serverFormat(String msg) {
         if (msg == null || msg.isBlank()) {
             return "ERR Unknown error";
         }

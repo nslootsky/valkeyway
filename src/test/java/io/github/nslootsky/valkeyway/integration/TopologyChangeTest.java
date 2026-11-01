@@ -250,7 +250,7 @@ class TopologyChangeTest {
                 await("the replica to take over", Duration.ofSeconds(20), () -> isPrimary(replica));
                 Thread.sleep(500);
             }
-            assertEquals(List.of(), load.errors(), "no write may fail during a graceful failover");
+            assertEquals(List.of(), load.errorSummary(), "no write may fail during a graceful failover");
             assertTrue(load.acked() > 0);
             assertEquals(Long.toString(load.acked()), nodes.at(replica).call("GET", counter),
                     "every acknowledged INCR applied exactly once");
@@ -333,6 +333,8 @@ class TopologyChangeTest {
                         tag, recoveryMs, load.errorCount(), load.errorKinds());
                 end.close();
             }
+            assertEquals(List.of(), load.errors().stream().filter(e -> !e.contains("message=ERR backend ")).toList(),
+                    "outage errors must read as backend failures, not raw redirects or Glide internals");
 
             assertEquals("v", proxy.call("GET", key), "single command");
             assertEquals(List.of("v", 1L, "v"), proxy.pipeline(List.of(cmd("GET", key), cmd("EXISTS", key), cmd("GET", key))),
@@ -500,9 +502,14 @@ class TopologyChangeTest {
             return errors.size();
         }
 
-        List<String> errors() {
-            List<String> all = new ArrayList<>(errors);
+        /** All errors, or a summary when there are many. */
+        List<String> errorSummary() {
+            List<String> all = errors();
             return all.size() > 10 ? List.of(all.size() + " errors, e.g. " + all.subList(0, 10)) : all;
+        }
+
+        List<String> errors() {
+            return new ArrayList<>(errors);
         }
 
         @Override

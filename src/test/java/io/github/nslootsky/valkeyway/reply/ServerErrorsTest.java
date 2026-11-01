@@ -35,7 +35,8 @@ class ServerErrorsTest {
                     + " | EXECABORT Transaction discarded because of previous errors.",
             "ResponseError: syntax error | ERR syntax error",
             "ERR invalid SCAN cursor | ERR invalid SCAN cursor",
-            "glide.api.models.exceptions.TimeoutException: Request timed out | ERR Request timed out",
+            "glide.api.models.exceptions.TimeoutException: Request timed out"
+                    + " | ERR backend request timed out; the command may or may not have run",
     })
     void errorMessagesUseServerErrorCodes(String glideMessage, String expected) {
         assertEquals(expected, ServerErrors.message(glideMessage));
@@ -44,6 +45,26 @@ class ServerErrorsTest {
     @Test
     void nullErrorMessageStillHasCode() {
         assertEquals("ERR Unknown error", ServerErrors.message(null));
+    }
+
+    /** What clients saw while a primary was killed (TopologyChangeTest), before the rewrite. */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', quoteCharacter = '"', value = {
+            "MOVED 3739 127.0.0.1:27103; ExtensionError"
+                    + " | ERR backend unavailable: can't reach 127.0.0.1:27103 (slot 3739); the command did not run",
+            "ASK 3739 127.0.0.1:27103"
+                    + " | ERR backend unavailable: can't reach 127.0.0.1:27103 (slot 3739); the command did not run",
+            "ERR Received connection error `Requested connection not found - ConnectionNotFoundForRoute: 127.0.0.1:27103`. Will attempt to reconnect"
+                    + " | ERR backend unavailable: no connection to 127.0.0.1:27103; the command did not run",
+            "ERR BrokenPipe: Cluster: Failed to receive command response from internal sender. RecvError(())"
+                    + " | ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run",
+            "ERR Received connection error `Cluster: Failed to receive command response from internal sender. RecvError(())`. Will attempt to reconnect"
+                    + " | ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run",
+            "ERR timed out | ERR backend request timed out; the command may or may not have run",
+            "TRYAGAIN Multiple keys request during rehashing of slot | TRYAGAIN Multiple keys request during rehashing of slot",
+    })
+    void backendFailuresAreRewritten(String message, String expected) {
+        assertEquals(expected, ServerErrors.message(message));
     }
 
     @ParameterizedTest
@@ -59,6 +80,8 @@ class ServerErrorsTest {
             "WRONGTYPE Operation against a key holding the wrong kind of value | false",
             "ERR BrokenPipe: Cluster: Failed to receive command response | false",
             "TRYAGAINX | false",
+            "ERR backend unavailable: no connection to 127.0.0.1:7003; the command did not run | true",
+            "ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run | false",
     })
     void recognisesErrorsRejectedWithoutRunning(String message, boolean expected) {
         assertEquals(expected, ServerErrors.rejectedWithoutRunning(new Reply.Error(message)));
