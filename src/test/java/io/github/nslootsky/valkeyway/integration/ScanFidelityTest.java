@@ -89,7 +89,7 @@ class ScanFidelityTest extends IntegrationTestBase {
                 c.call("SET", "sdb:" + i, "v");
             }
             List<?> first = (List<?>) c.call("SCAN", "0", "MATCH", "sdb:*", "COUNT", "1");
-            String cursor = (String) first.get(0);
+            String cursor = (String) first.getFirst();
             assertNotEquals("0", cursor, "50 keys don't fit in one COUNT 1 step");
 
             c.call("SELECT", "1");
@@ -98,7 +98,7 @@ class ScanFidelityTest extends IntegrationTestBase {
             c.call("SELECT", "0");
 
             List<?> again = (List<?>) c.call("SCAN", "0", "MATCH", "sdb:*", "COUNT", "1");
-            String next = (String) again.get(0);
+            String next = (String) again.getFirst();
             c.call("SCAN", next, "MATCH", "sdb:*", "COUNT", "1");
             assertEquals(new Error("ERR invalid SCAN cursor"), c.call("SCAN", next, "MATCH", "sdb:*", "COUNT", "1"),
                     "each call hands out a new cursor id");

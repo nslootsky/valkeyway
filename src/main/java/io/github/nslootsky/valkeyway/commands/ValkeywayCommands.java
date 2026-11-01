@@ -18,7 +18,6 @@ import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 import io.github.nslootsky.valkeyway.blocking.BlockingClientPool;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.ops.MetricsCollector;
-import io.github.nslootsky.valkeyway.commands.ScanCursorStore;
 import io.github.nslootsky.valkeyway.server.CommandTable;
 
 /**

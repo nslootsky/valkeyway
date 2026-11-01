@@ -62,7 +62,8 @@ public final class Transaction {
         return error;
     }
 
-    void error(String error) {
-        this.error = error;
+    /** Dooms the transaction: EXEC will answer EXECABORT. */
+    void abort() {
+        this.error = TransactionQueue.EXECABORT;
     }
 }

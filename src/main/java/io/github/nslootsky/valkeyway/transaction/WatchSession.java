@@ -92,7 +92,7 @@ public final class WatchSession implements AutoCloseable {
             return;
         }
         lease.resource().customCommand(new GlideString[]{GlideString.of("UNWATCH")})
-                .whenComplete((reply, error) -> {
+                .whenComplete((_, error) -> {
                     if (error != null) {
                         lease.discard();
                     }

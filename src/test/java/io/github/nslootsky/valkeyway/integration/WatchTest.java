@@ -177,7 +177,7 @@ class WatchTest extends IntegrationTestBase {
             a.call("MULTI");
             a.call("SET", "w11:a", "v");
             Object reply = a.call("EXEC");
-            assertTrue(reply instanceof RawRespClient.Error e && e.message().startsWith("CROSSSLOT "), "got " + reply);
+            assertTrue(reply instanceof RawRespClient.Error(String message) && message.startsWith("CROSSSLOT "), "got " + reply);
         }
     }
 

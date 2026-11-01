@@ -14,7 +14,7 @@ import io.github.nslootsky.valkeyway.protocol.Reply;
 @FunctionalInterface
 public interface CommandListener {
 
-    CommandListener NONE = (name, reply, elapsedNanos) -> { };
+    CommandListener NONE = (_, _, _) -> { };
 
     /**
      * @param name         the command name as the client sent it

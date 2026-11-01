@@ -80,7 +80,7 @@ class SeedDnsTest {
 
     @AfterAll
     static void stop() {
-        Stream.of(proxy, clusterA, clusterB).filter(c -> c != null).forEach(GenericContainer::stop);
+        Stream.of(proxy, clusterA, clusterB).filter(java.util.Objects::nonNull).forEach(GenericContainer::stop);
         if (network != null) {
             network.close();
         }

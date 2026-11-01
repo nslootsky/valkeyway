@@ -180,7 +180,7 @@ public final class RespDecoder extends ByteToMessageDecoder {
                 throw new ProtocolException(error);
             }
             value = value * 10 + (b - '0');
-            if (value > MAX_BULK && value > MAX_ARGS) {
+            if (value > MAX_BULK) { // larger than any count or length we accept; also stops overflow
                 throw new ProtocolException(error);
             }
         }

@@ -51,7 +51,7 @@ public final class TransactionQueue {
 
     /** Answers a command with {@code error} and discards the transaction (EXEC answers EXECABORT). */
     public static Reply reject(Connection connection, String error) {
-        Transaction.current(connection).error(EXECABORT);
+        Transaction.current(connection).abort();
         return Reply.error(error);
     }
 }

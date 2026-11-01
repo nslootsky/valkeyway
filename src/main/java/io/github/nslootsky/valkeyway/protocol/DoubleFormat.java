@@ -32,7 +32,7 @@ public final class DoubleFormat {
         if (d == 0) {
             return "0";
         }
-        if (d >= -Long.MAX_VALUE / 2 && d <= Long.MAX_VALUE / 2 && d == (long) d) {
+        if (Math.abs(d) <= 0x1p62 && d == (long) d) { // integral and well inside long range
             return Long.toString((long) d);
         }
 
@@ -77,7 +77,7 @@ public final class DoubleFormat {
         if (trimZeros) {
             rounded = rounded.stripTrailingZeros();
             if (rounded.scale() < 0) {
-                rounded = rounded.setScale(0);
+                rounded = rounded.setScale(0, RoundingMode.UNNECESSARY); // only adds digits
             }
         }
         String s = rounded.toPlainString();

@@ -45,9 +45,10 @@ public class ScanCursorStore {
                 .maximumSize(maxCursors)
                 .scheduler(Scheduler.systemScheduler())
                 .executor(Runnable::run) // release evicted cursors right away, on the evicting thread
-                .removalListener((String id, Entry entry, RemovalCause cause) -> {
-                    // Explicit removals are takes: the caller now owns the cursor.
-                    if (entry != null && cause.wasEvicted()) {
+                .removalListener((String _, Entry entry, RemovalCause cause) -> {
+                    // Explicit removals are takes: the caller now owns the cursor. (Values are held
+                    // strongly, so an evicted entry is never null.)
+                    if (cause.wasEvicted()) {
                         entry.cursor().releaseCursorHandle();
                     }
                 })

@@ -10,7 +10,8 @@ package io.github.nslootsky.valkeyway.server;
  * (a transaction's queue, a SCAN cursor, ...). Keys compare by identity: declare each once, as a
  * constant of the class that owns the state.
  *
- * @param <T> the type of the state
+ * @param <T> the type of the state; unused at run time, it types {@link Connection#get} and
+ *            {@link Connection#set}
  */
 public final class ConnectionKey<T> {
 
