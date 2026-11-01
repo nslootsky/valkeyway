@@ -168,6 +168,16 @@ public record ValkeywayProperties(
         public Auth {
             if (users == null) users = Map.of();
         }
+
+        /** Without the passwords, should this ever be logged. */
+        @Override
+        public String toString() {
+            return "Auth[password=" + mask(password) + ", users=" + users.keySet() + "]";
+        }
+    }
+
+    private static String mask(String secret) {
+        return secret == null || secret.isEmpty() ? "(none)" : "(set)";
     }
 
     /**
@@ -194,6 +204,12 @@ public record ValkeywayProperties(
             if (clientCerts == null) clientCerts = TlsContext.ClientCerts.NONE;
             if (protocols == null) protocols = List.of();
         }
+
+        @Override
+        public String toString() {
+            return "Tls[port=" + port + ", certFile=" + certFile + ", keyFile=" + keyFile + ", keyPassword="
+                    + mask(keyPassword) + ", caFile=" + caFile + ", clientCerts=" + clientCerts + ", protocols=" + protocols + "]";
+        }
     }
 
     /**
@@ -211,6 +227,11 @@ public record ValkeywayProperties(
             if (username != null && password == null) {
                 throw new IllegalArgumentException("proxy.backend.username needs proxy.backend.password");
             }
+        }
+
+        @Override
+        public String toString() {
+            return "Backend[username=" + username + ", password=" + mask(password) + ", tls=" + tls + "]";
         }
     }
 

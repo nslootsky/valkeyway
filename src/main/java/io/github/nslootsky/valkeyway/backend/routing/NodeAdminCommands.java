@@ -21,7 +21,10 @@ public final class NodeAdminCommands {
     /** Refused whatever their arguments. */
     private static final Set<String> COMMANDS = Set.of(
             "shutdown", "replicaof", "slaveof", "failover", "debug", "save", "bgsave", "bgrewriteaof",
-            "sync", "psync", "replconf", "module");
+            "sync", "psync", "replconf", "module",
+            // Keyless and without a request policy, so Glide sends it to one node: it would swap two
+            // databases on that node only.
+            "swapdb");
 
     /** Refused for these subcommands only. */
     private static final Map<String, Set<String>> SUBCOMMANDS = Map.of(
@@ -29,7 +32,9 @@ public final class NodeAdminCommands {
             "acl", Set.of("setuser", "deluser", "load", "save"),
             "cluster", Set.of("addslots", "addslotsrange", "delslots", "delslotsrange", "failover", "forget",
                     "flushslots", "meet", "replicate", "reset", "saveconfig", "set-config-epoch", "setslot",
-                    "bumpepoch"));
+                    "bumpepoch",
+                    // Valkey 9: deleting a slot's keys, and atomic slot migration
+                    "flushslot", "migrateslots", "cancelslotmigrations", "syncslots"));
 
     private final boolean reject;
 

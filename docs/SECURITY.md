@@ -113,6 +113,31 @@ Things to know:
 
 Health checks and metrics (`/actuator/*` on port 6380) are plain HTTP without authentication, whatever the settings above. Keep that port on an internal network, or bind it to localhost with `management.server.address=127.0.0.1`.
 
+## Hardening
+
+What to do beyond turning on passwords and TLS:
+
+- **Restrict the proxy's backend user with an ACL.**
+  - **Why:** `proxy.node-admin-commands: reject` (the default) guards against mistakes, such as a SHUTDOWN or CONFIG SET reaching one random node. It isn't a security boundary: proxy users can run any command, and a script can call admin commands that aren't marked noscript, such as CLUSTER MEET.
+  - **How:** let the cluster itself refuse administration, scripts included, by giving the proxy a user without `@admin`:
+    ```
+    ACL SETUSER proxy on >password ~* &* +@all -@admin +client|unblock
+    ```
+    The proxy needs only `CLIENT UNBLOCK` from `@admin`, to pass CLIENT UNBLOCK on.
+  - **Tested:** everything works through such a user, including Pub/Sub, scripts and blocking commands, and an `EVAL` calling `CLUSTER MEET` gets an ACL error from the node.
+- **Turn off the plain-text port** (`proxy.port: 0`) once clients use TLS.
+- **Encrypt the backend password:** use TLS to the cluster whenever it has a password, or the password crosses the network unencrypted.
+- **Keep the management port internal.** It has no authentication, and its health details include the cluster's error messages.
+- **Size the shared pools for your clients.**
+  - **What they cap:** blocking commands and WATCH run on bounded pools of backend clients (`proxy.blocking-pool.max-size`, `proxy.transactions.watch-pool.max-size`, 64 each). Clients that hold them all, for example with many `BLPOP key 0`, make others wait.
+  - **Watching it:** `proxy.blocking.pool.exhausted_waits` shows when that happens.
+
+Limits built in, as in Valkey:
+- **Before authenticating:** a client's requests are limited to 10 arguments of 16 KB each.
+- **Announced sizes:** a request's announced argument count isn't trusted for allocation.
+- **Slow Pub/Sub subscribers:** one that falls 100,000 messages or 32 MB behind is disconnected.
+- **Metrics:** only command-shaped names get per-command metrics, at most 512 of them, so clients can't grow memory with made-up command names.
+
 ## Reference
 
 | Setting | Environment variable | Default | Meaning |

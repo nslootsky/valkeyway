@@ -54,6 +54,9 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Blocking commands' argument errors** use Valkey's wording.
 - **Pipelines:** a pipeline that mixed answered-locally commands and barriers could stall.
 - **Inline commands** follow Valkey 9's quoting, and RESP requests are checked for strict CRLF.
+- **Memory exhaustion:** a request's announced argument count (`*1048576`) no longer allocates the whole array up front, and per-command metrics no longer remember every made-up command name a client sends.
+- **Refused node commands:** SWAPDB and Valkey 9's slot migration commands (CLUSTER MIGRATESLOTS, SYNCSLOTS, CANCELSLOTMIGRATIONS, FLUSHSLOT) are now refused by default, like other node administration.
+- **ACL refusals** from the cluster are reported as NOPERM, not ERR.
 
 ## [0.1.0] - 2026-07-30
 
