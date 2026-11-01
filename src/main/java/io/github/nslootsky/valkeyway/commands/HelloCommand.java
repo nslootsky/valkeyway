@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import io.github.nslootsky.valkeyway.ProxyVersion;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
@@ -89,7 +90,7 @@ public class HelloCommand implements InlineCommandHandler {
         connection.protocol((int) version);
         return new Reply.MapReply(List.of(
                 Reply.bulk("server"), Reply.bulk("valkeyway"),
-                Reply.bulk("version"), Reply.bulk("0.1.0"),
+                Reply.bulk("version"), Reply.bulk(ProxyVersion.get()),
                 Reply.bulk("proto"), Reply.integer(version),
                 Reply.bulk("id"), Reply.integer(connection.id()),
                 Reply.bulk("mode"), Reply.bulk("standalone"),

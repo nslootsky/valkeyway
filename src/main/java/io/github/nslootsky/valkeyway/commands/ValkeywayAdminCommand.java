@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.commands;
 
 import glide.api.GlideClusterClient;
+import io.github.nslootsky.valkeyway.ProxyVersion;
 import io.github.nslootsky.valkeyway.ValkeywayProperties;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
@@ -82,6 +83,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
     private Reply stats(Connection connection) {
         long uptimeSeconds = TimeUnit.MILLISECONDS.toSeconds(ManagementFactory.getRuntimeMXBean().getUptime());
         String text = "# Proxy\r\n"
+                + "valkeyway_version:" + ProxyVersion.get() + "\r\n"
                 + "uptime_in_seconds:" + uptimeSeconds + "\r\n"
                 + "connected_clients:" + connection.registry().clients().size() + "\r\n"
                 + "maxclients:" + connection.registry().maxClients() + "\r\n"

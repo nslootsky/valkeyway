@@ -42,6 +42,8 @@ class InfoTest extends IntegrationTestBase {
             assertEquals(Integer.toString(RESP_PORT), field(info, "tcp_port"));
             assertNotNull(field(info, "redis_version"));
             assertNotNull(field(info, "used_memory"), "sections from a node");
+            assertEquals(io.github.nslootsky.valkeyway.ProxyVersion.get(), field(info, "valkeyway_version"));
+            assertNotEquals("unknown", io.github.nslootsky.valkeyway.ProxyVersion.get(), "from the build");
         }
     }
 
