@@ -1,0 +1,255 @@
+/*
+ * Copyright (c) 2026 Nick Slootsky
+ * Licensed under the MIT License. See LICENSE file.
+ */
+
+package io.github.nslootsky.valkeyway.reply;
+
+import glide.api.models.GlideString;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Restores the reply shapes a standalone server sends to RESP2 clients.
+ *
+ * <p>Glide talks RESP3 to the cluster and reshapes some replies by command name before we see them
+ * (glide-core value_conversion.rs, {@code expected_type_for_cmd}): stream entries become maps of id
+ * to field pairs, geo results get nested and parsed as doubles, and so on. Some RESP3 replies also
+ * differ from RESP2 on their own (WITHSCORES results are arrays of pairs). This class maps those
+ * values back, given the command that produced them.
+ *
+ * <p>Output uses {@code Object[]} for arrays and {@link GlideString} for strings that must be sent
+ * as bulk strings (formatted numbers); everything else passes through unchanged.
+ */
+public final class Resp2Shapes {
+
+    private Resp2Shapes() {}
+
+    /** Reshapes {@code value}, the reply to {@code args} (args[0] = command name). */
+    public static Object shape(byte[][] args, Object value) {
+        // Every command handled here has a name of 5+ chars starting with x, z, h, g or b, so the
+        // hot short commands (GET, SET, HGET, HSET, ZADD, ...) exit without allocating.
+        if (value == null || args.length == 0 || args[0].length < 5) {
+            return value;
+        }
+        switch (args[0][0] | 0x20) {
+            case 'x', 'z', 'h', 'g', 'b' -> { }
+            default -> {
+                return value;
+            }
+        }
+        String name = new String(args[0], StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT);
+        return switch (name) {
+            case "xrange", "xrevrange" -> entries(value);
+            case "xclaim" -> hasOption(args, "JUSTID") ? value : entries(value);
+            case "xread", "xreadgroup" -> streams(value);
+            case "xautoclaim" -> hasOption(args, "JUSTID") ? value : autoclaim(value);
+            case "zrandmember" -> hasOption(args, "WITHSCORES") ? flattenPairs(value) : value;
+            case "hrandfield" -> hasOption(args, "WITHVALUES") ? flattenPairs(value) : value;
+            case "zrangebyscore", "zrevrangebyscore", "zrevrange" ->
+                    hasOption(args, "WITHSCORES") ? flattenPairs(value) : value;
+            case "zmpop", "bzmpop" -> keyAndScoredMembers(value);
+            case "geodist" -> distance(value);
+            case "geopos" -> positions(value);
+            case "geosearch", "georadius", "georadius_ro", "georadiusbymember", "georadiusbymember_ro" ->
+                    geoResults(args, value);
+            default -> value;
+        };
+    }
+
+    // --- streams ---
+
+    /** {id -> [[f, v], ...]} to [[id, [f, v, ...]], ...]. */
+    private static Object entries(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return value;
+        }
+        Object[] out = new Object[map.size()];
+        int i = 0;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            out[i++] = new Object[]{entry.getKey(), flattenPairs(entry.getValue())};
+        }
+        return out;
+    }
+
+    /** {stream -> {id -> fields}} to [[stream, entries], ...]. */
+    private static Object streams(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return value;
+        }
+        Object[] out = new Object[map.size()];
+        int i = 0;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            out[i++] = new Object[]{entry.getKey(), entries(entry.getValue())};
+        }
+        return out;
+    }
+
+    /** [cursor, {id -> fields}, deleted] to [cursor, entries, deleted]. */
+    private static Object autoclaim(Object value) {
+        if (value instanceof Object[] arr && arr.length >= 2) {
+            Object[] out = arr.clone();
+            out[1] = entries(arr[1]);
+            return out;
+        }
+        return value;
+    }
+
+    // --- sorted sets / hashes ---
+
+    /** [[a, b], [c, d]] to [a, b, c, d]. Leaves anything else alone. */
+    private static Object flattenPairs(Object value) {
+        Object[] pairs = toArray(value);
+        if (pairs == null) {
+            return value;
+        }
+        int size = 0;
+        for (Object pair : pairs) {
+            Object[] p = toArray(pair);
+            if (p == null) {
+                return value;
+            }
+            size += p.length;
+        }
+        Object[] out = new Object[size];
+        int i = 0;
+        for (Object pair : pairs) {
+            for (Object element : toArray(pair)) {
+                out[i++] = element;
+            }
+        }
+        return out;
+    }
+
+    /** [key, {member -> score}] to [key, [[member, score], ...]]. */
+    private static Object keyAndScoredMembers(Object value) {
+        if (value instanceof Object[] arr && arr.length == 2 && arr[1] instanceof Map<?, ?> scores) {
+            Object[] members = new Object[scores.size()];
+            int i = 0;
+            for (Map.Entry<?, ?> entry : scores.entrySet()) {
+                members[i++] = new Object[]{entry.getKey(), entry.getValue()};
+            }
+            return new Object[]{arr[0], members};
+        }
+        return value;
+    }
+
+    // --- geo ---
+
+    /** GEODIST and WITHDIST: Valkey sends "%.4f". */
+    private static Object distance(Object value) {
+        return value instanceof Double d ? bulk(fixed(d, 4, false)) : value;
+    }
+
+    /** Longitude/latitude: Valkey sends "%.17Lf" with trailing zeros trimmed. */
+    private static Object coordinate(Object value) {
+        return value instanceof Double d ? bulk(fixed(d, 17, true)) : value;
+    }
+
+    private static Object positions(Object value) {
+        Object[] arr = toArray(value);
+        if (arr == null) {
+            return value;
+        }
+        Object[] out = new Object[arr.length];
+        for (int i = 0; i < arr.length; i++) {
+            out[i] = coordinatePair(arr[i]);
+        }
+        return out;
+    }
+
+    private static Object coordinatePair(Object value) {
+        Object[] pair = toArray(value);
+        if (pair == null) {
+            return value;
+        }
+        Object[] out = new Object[pair.length];
+        for (int i = 0; i < pair.length; i++) {
+            out[i] = coordinate(pair[i]);
+        }
+        return out;
+    }
+
+    /**
+     * With WITHDIST / WITHHASH / WITHCOORD, Glide returns [member, [dist?, hash?, [lon, lat]?]] per
+     * result; RESP2 is [member, dist?, hash?, [lon, lat]?].
+     */
+    private static Object geoResults(byte[][] args, Object value) {
+        boolean withDist = hasOption(args, "WITHDIST");
+        boolean withHash = hasOption(args, "WITHHASH");
+        boolean withCoord = hasOption(args, "WITHCOORD");
+        Object[] results = toArray(value);
+        if (results == null || !(withDist || withHash || withCoord)) {
+            return value;
+        }
+        Object[] out = new Object[results.length];
+        for (int r = 0; r < results.length; r++) {
+            Object[] item = toArray(results[r]);
+            if (item == null || item.length != 2 || toArray(item[1]) == null) {
+                return value;
+            }
+            Object[] extras = toArray(item[1]);
+            Object[] flat = new Object[1 + extras.length];
+            flat[0] = item[0];
+            int i = 0;
+            if (withDist && i < extras.length) {
+                flat[1 + i] = distance(extras[i]);
+                i++;
+            }
+            if (withHash && i < extras.length) {
+                flat[1 + i] = extras[i];
+                i++;
+            }
+            if (withCoord && i < extras.length) {
+                flat[1 + i] = coordinatePair(extras[i]);
+            }
+            out[r] = flat;
+        }
+        return out;
+    }
+
+    // --- helpers ---
+
+    /**
+     * Formats like C's printf("%.Nf") on the exact binary value (round half to even), optionally
+     * trimming trailing zeros the way Valkey's human-readable long double output does.
+     */
+    static String fixed(double d, int decimals, boolean trimZeros) {
+        BigDecimal rounded = new BigDecimal(d).setScale(decimals, RoundingMode.HALF_EVEN);
+        if (trimZeros) {
+            rounded = rounded.stripTrailingZeros();
+            if (rounded.scale() < 0) {
+                rounded = rounded.setScale(0);
+            }
+        }
+        String s = rounded.toPlainString();
+        return s.equals("-0") ? "0" : s;
+    }
+
+    private static GlideString bulk(String s) {
+        return GlideString.of(s);
+    }
+
+    private static Object[] toArray(Object value) {
+        return switch (value) {
+            case Object[] arr -> arr;
+            case Collection<?> c -> c.toArray();
+            case null, default -> null;
+        };
+    }
+
+    private static boolean hasOption(byte[][] args, String option) {
+        for (int i = 1; i < args.length; i++) {
+            if (args[i].length == option.length()
+                    && new String(args[i], StandardCharsets.US_ASCII).equalsIgnoreCase(option)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}

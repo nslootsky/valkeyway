@@ -22,6 +22,7 @@ import io.github.nslootsky.valkeyway.cluster.MapReplyCommands;
 import io.github.nslootsky.valkeyway.cluster.SlotRoutes;
 import io.github.nslootsky.valkeyway.handler.SessionState;
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
+import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -141,7 +142,7 @@ public class CatchAllCommand implements RespCommand {
                         new String(args[0], StandardCharsets.US_ASCII), TokenUtils.summarize(result),
                         result.hasSingleData(), result.hasMultiData());
             }
-            return TokenUtils.toRedisToken(result);
+            return toReply(args, result);
         } catch (Exception e) {
             log.error("ERR {} error={}", new String(args[0], StandardCharsets.US_ASCII), e.getMessage());
             return RedisToken.error(TokenUtils.cleanErrorMessage(e.getMessage()));
@@ -183,7 +184,7 @@ public class CatchAllCommand implements RespCommand {
         try {
             long waitedMillis = (System.nanoTime() - start) / 1_000_000;
             byte[][] effective = spec.withRemainingTimeout(args, waitedMillis);
-            return TokenUtils.toRedisToken(send(lease.resource(), effective).get());
+            return toReply(args, send(lease.resource(), effective).get());
         } catch (ExecutionException e) {
             // A server error leaves the connection usable. Anything else (timeout, connection loss)
             // may leave the blocking command pending on it, so don't hand it to the next caller.
@@ -198,6 +199,13 @@ public class CatchAllCommand implements RespCommand {
         } finally {
             lease.close();
         }
+    }
+
+    /** Single-node replies are reshaped to what a standalone server sends RESP2 clients. */
+    private static RedisToken toReply(byte[][] args, ClusterValue<Object> result) {
+        return result.hasSingleData()
+                ? TokenUtils.toRedisToken(Resp2Shapes.shape(args, result.getSingleValue()))
+                : TokenUtils.toRedisToken(result);
     }
 
     private static RedisToken timeoutReply(BlockingCommands.TimeoutReply reply) {

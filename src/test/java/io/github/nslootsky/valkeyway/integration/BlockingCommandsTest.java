@@ -109,9 +109,12 @@ class BlockingCommandsTest extends IntegrationTestBase {
             assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 500);
 
             c.call("XADD", "{bc:e}s", "*", "f", "new");
-            // Only check that it woke up with data: stream reply shapes are not yet RESP2-exact
-            // (Glide reshapes them; tracked separately).
-            assertInstanceOf(List.class, blocked.get(2, TimeUnit.SECONDS));
+            // RESP2 shape: [[stream, [[id, [field, value]]]]]
+            List<?> streams = assertInstanceOf(List.class, blocked.get(2, TimeUnit.SECONDS));
+            List<?> stream = (List<?>) streams.getFirst();
+            assertEquals("{bc:e}s", stream.get(0));
+            List<?> entry = (List<?>) ((List<?>) stream.get(1)).getFirst();
+            assertEquals(List.of("f", "new"), entry.get(1));
         }
     }
 

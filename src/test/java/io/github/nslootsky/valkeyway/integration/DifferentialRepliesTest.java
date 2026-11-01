@@ -81,10 +81,15 @@ class DifferentialRepliesTest extends IntegrationTestBase {
         return all;
     }
 
+    /** A stream with a consumer group in which alice holds entries 1-1..1-3 pending. */
+    private static final List<String[]> GROUP = concat(streamOf(5),
+            c("XGROUP", "CREATE", "%s", "g1", "0"),
+            c("XREADGROUP", "GROUP", "g1", "alice", "COUNT", "3", "STREAMS", "%s", ">"));
+
+    private static final List<String[]> GEO = List.of(c("DEL", "%g"),
+            c("GEOADD", "%g", "13.361389", "38.115556", "Palermo", "15.087269", "37.502669", "Catania"));
+
     static Stream<Case> cases() {
-        List<String[]> group = concat(streamOf(5),
-                c("XGROUP", "CREATE", "%s", "g1", "0"),
-                c("XREADGROUP", "GROUP", "g1", "alice", "COUNT", "3", "STREAMS", "%s", ">"));
         return Stream.of(
                 // Ordering and binary integrity (Glide's ClusterValue map handling)
                 of("ZRANGE WITHSCORES keeps order", zsetOf(100), "ZRANGE", "%z", "0", "-1", "WITHSCORES"),
@@ -117,9 +122,9 @@ class DifferentialRepliesTest extends IntegrationTestBase {
                 of("EXPIRE returns integer", List.<String[]>of(c("SET", "%e", "v")), "EXPIRE", "%e", "100"),
 
                 // Streams (Glide reshapes these into maps)
-                of("XCLAIM JUSTID", group, "XCLAIM", "%s", "g1", "carol", "0", "1-1", "JUSTID"),
-                of("XINFO STREAM", group, "XINFO", "STREAM", "%s"),
-                of("XINFO GROUPS", group, "XINFO", "GROUPS", "%s"),
+                of("XCLAIM JUSTID", GROUP, "XCLAIM", "%s", "g1", "carol", "0", "1-1", "JUSTID"),
+                of("XINFO STREAM", GROUP, "XINFO", "STREAM", "%s"),
+                of("XINFO GROUPS", GROUP, "XINFO", "GROUPS", "%s"),
 
                 // Pair-shaped replies
                 of("BZPOPMIN with data", zsetOf(3), "BZPOPMIN", "%z", "1"),
@@ -130,6 +135,44 @@ class DifferentialRepliesTest extends IntegrationTestBase {
                 // Geo (Glide parses distances and coordinates as doubles)
                 of("GEODIST", List.<String[]>of(c("DEL", "%g"), c("GEOADD", "%g", "13.361389", "38.115556", "Palermo",
                         "15.087269", "37.502669", "Catania")), "GEODIST", "%g", "Palermo", "Catania", "km"),
+
+                // Replies Glide reshapes, restored to RESP2 shape
+                of("ZRANGEBYSCORE WITHSCORES", zsetOf(50), "ZRANGEBYSCORE", "%z", "5", "40", "WITHSCORES"),
+                of("XRANGE", streamOf(60), "XRANGE", "%s", "-", "+"),
+                of("XREVRANGE COUNT", streamOf(20), "XREVRANGE", "%s", "+", "-", "COUNT", "5"),
+                of("XREAD two streams", concat(streamOf(4), c("DEL", "%s2"), c("XADD", "%s2", "2-1", "a", "b")),
+                        "XREAD", "COUNT", "10", "STREAMS", "%s", "%s2", "0", "0"),
+                of("XREADGROUP new entries", concat(streamOf(5), c("XGROUP", "CREATE", "%s", "g1", "0")),
+                        "XREADGROUP", "GROUP", "g1", "bob", "COUNT", "2", "STREAMS", "%s", ">"),
+                of("XREADGROUP pending with deleted entry", concat(GROUP, c("XDEL", "%s", "1-2")),
+                        "XREADGROUP", "GROUP", "g1", "alice", "STREAMS", "%s", "0"),
+                of("XCLAIM", GROUP, "XCLAIM", "%s", "g1", "carol", "0", "1-1", "1-3"),
+                of("XAUTOCLAIM", GROUP, "XAUTOCLAIM", "%s", "g1", "carol", "0", "0-0", "COUNT", "2"),
+                of("ZRANDMEMBER WITHSCORES", List.<String[]>of(c("DEL", "%r"), c("ZADD", "%r", "1.5", "only")),
+                        "ZRANDMEMBER", "%r", "-3", "WITHSCORES"),
+                of("HRANDFIELD WITHVALUES", List.<String[]>of(c("DEL", "%rh"), c("HSET", "%rh", "only", "v")),
+                        "HRANDFIELD", "%rh", "-3", "WITHVALUES"),
+                of("ZMPOP", zsetOf(10), "ZMPOP", "1", "%z", "MIN", "COUNT", "3"),
+                of("BZMPOP with data", zsetOf(10), "BZMPOP", "1", "1", "%z", "MAX", "COUNT", "2"),
+                of("GEOPOS", List.<String[]>of(c("DEL", "%g"), c("GEOADD", "%g", "13.361389", "38.115556", "Palermo")),
+                        "GEOPOS", "%g", "Palermo", "nope"),
+                of("GEOSEARCH WITHDIST WITHCOORD", List.<String[]>of(c("DEL", "%g"),
+                        c("GEOADD", "%g", "13.361389", "38.115556", "Palermo", "15.087269", "37.502669", "Catania")),
+                        "GEOSEARCH", "%g", "FROMLONLAT", "15", "37", "BYRADIUS", "200", "km", "ASC",
+                        "WITHDIST", "WITHCOORD"),
+                of("XAUTOCLAIM JUSTID", GROUP, "XAUTOCLAIM", "%s", "g1", "carol", "0", "0-0", "JUSTID"),
+                of("ZREVRANGE WITHSCORES", zsetOf(20), "ZREVRANGE", "%z", "0", "9", "WITHSCORES"),
+                of("ZREVRANGEBYSCORE WITHSCORES", zsetOf(20), "ZREVRANGEBYSCORE", "%z", "15", "3", "WITHSCORES"),
+                of("ZRANDMEMBER without scores", List.<String[]>of(c("DEL", "%r"), c("ZADD", "%r", "1", "only")),
+                        "ZRANDMEMBER", "%r", "-2"),
+                of("GEOSEARCH plain", GEO, "GEOSEARCH", "%g", "FROMLONLAT", "15", "37", "BYRADIUS", "200", "km", "ASC"),
+                of("GEOSEARCH WITHCOORD", GEO, "GEOSEARCH", "%g", "FROMMEMBER", "Palermo", "BYBOX", "400", "400", "km",
+                        "ASC", "WITHCOORD"),
+                of("GEORADIUS WITHDIST", GEO, "GEORADIUS", "%g", "15", "37", "200", "km", "WITHDIST", "ASC"),
+                of("EXEC with reshaped replies", concat(streamOf(3),
+                        c("DEL", "%r"), c("ZADD", "%r", "2.5", "only"),
+                        c("MULTI"), c("XRANGE", "%s", "-", "+"), c("ZRANDMEMBER", "%r", "-2", "WITHSCORES"),
+                        c("ZSCORE", "%r", "only")), "EXEC"),
 
                 // Sets come back from Glide as Java sets; members are unordered by definition
                 unordered("SMEMBERS", List.<String[]>of(c("DEL", "%st"), c("SADD", "%st", "c", "a", "b", "ÿ")), "SMEMBERS", "%st"),
@@ -145,10 +188,13 @@ class DifferentialRepliesTest extends IntegrationTestBase {
         String directPrefix = "{diff:" + id + ":d}";
         String proxyPrefix = "{diff:" + id + ":p}";
 
+        // All of a case's keys share the prefix's hash tag, so one node owns them. Send everything,
+        // including keyless commands such as MULTI/EXEC, to that node over one connection.
+        RawRespClient owner = nodes().at(nodes().ownerOf(directPrefix));
         for (String[] cmd : testCase.setup()) {
-            direct(withPrefix(cmd, directPrefix));
+            owner.call(withPrefix(cmd, directPrefix));
         }
-        Object expected = direct(withPrefix(testCase.command(), directPrefix));
+        Object expected = owner.call(withPrefix(testCase.command(), directPrefix));
 
         Object actual;
         try (RawRespClient proxy = new RawRespClient("127.0.0.1", RESP_PORT)) {
@@ -187,11 +233,11 @@ class DifferentialRepliesTest extends IntegrationTestBase {
         return reply;
     }
 
-    private static Object direct(String[] cmd) throws IOException {
+    private static DirectNodes nodes() {
         if (nodes == null) {
             nodes = new DirectNodes(cluster.getNodeAddresses());
         }
-        return nodes.call(cmd);
+        return nodes;
     }
 
     @AfterAll
