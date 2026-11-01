@@ -151,7 +151,7 @@ class RealClientsTest extends IntegrationTestBase {
         };
         try (Jedis sub = jedis(Protocol.RESP2); Jedis j = jedis(Protocol.RESP2)) {
             CompletableFuture<Void> loop = CompletableFuture.runAsync(() -> sub.subscribe(listener, "rc:jch"));
-            assertTrue(waitFor(() -> listener.isSubscribed()));
+            assertTrue(waitFor(listener::isSubscribed));
             listener.psubscribe("rc:jp*");
             assertTrue(subscribed.await(5, TimeUnit.SECONDS));
             j.publish("rc:jch", "hello");

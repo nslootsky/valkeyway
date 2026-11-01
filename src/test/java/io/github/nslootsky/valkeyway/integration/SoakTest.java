@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * connections must level off rather than grow, and the proxy must return to its idle state when the
  * load stops. Skipped unless asked for:
  *
- * <pre>./mvnw failsafe:integration-test -Dskip.integration.tests=false -Dit.test=SoakTest -Dsoak.minutes=60</pre>
+ * <pre>./mvnw failsafe:integration-test -Dskip.integration.tests=false -Dit.test=SoakTest -Dsoak.minutes=60 -Dit.log.level=INFO</pre>
  *
  * The proxy runs in this JVM, so heap and threads are the proxy's (and the load's).
  */

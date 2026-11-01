@@ -9,7 +9,6 @@ import java.util.Set;
 import java.util.concurrent.CompletionException;
 import glide.api.models.exceptions.ClosingException;
 import glide.api.models.exceptions.TimeoutException;
-import glide.api.models.exceptions.RequestException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 
 import java.util.Map;

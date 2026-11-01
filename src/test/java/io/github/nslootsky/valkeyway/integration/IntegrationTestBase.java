@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
         properties = {
                 "proxy.host=0.0.0.0",
                 "proxy.port=6379",
-                "logging.level.io.github.nslootsky.valkeyway=DEBUG"
+                // -Dit.log.level=INFO for long runs such as SoakTest, which log gigabytes at DEBUG
+                "logging.level.io.github.nslootsky.valkeyway=${it.log.level:DEBUG}"
         }
 )
 public abstract class IntegrationTestBase {

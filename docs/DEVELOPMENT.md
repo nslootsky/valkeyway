@@ -49,13 +49,17 @@ To build the Docker image: `docker build -t valkeyway:latest .`
 
 - **`DifferentialRepliesTest`:** runs each case against the node that owns its keys and through the proxy, and requires identical replies, in RESP2, pipelined and RESP3. Add a case for any new reply type.
 - **`TopologyChangeTest`:** slot migrations, failovers and killed or hung primaries under live traffic.
+- **`RealClientsTest`, `RealClientsAuthTlsTest`:** Jedis and Lettuce, in RESP2 and RESP3, including pipelines, transactions, Pub/Sub, blocking commands and AUTH over TLS.
+- **`SoakTest`:** mixed load for a set time, checking that heap, threads and connections level off. Skipped unless asked for; run it before a release:
+  `./mvnw failsafe:integration-test failsafe:verify -Dskip.integration.tests=false -Dit.test=SoakTest -Dsoak.minutes=60 -Dit.log.level=INFO`
 - **`UpstreamAssumptionsTest`:** keeps [UPSTREAM_ASSUMPTIONS.md](UPSTREAM_ASSUMPTIONS.md) and the `[upstream:ID]` tags in the code in step.
 
 ## Releasing
 
 1. Set the version in `pom.xml`, and add its section to `CHANGELOG.md` (`## [x.y.z] - date`, with an "Upgrading" part for anything users must know).
-2. Merge to `main`.
-3. Tag it: `git tag vx.y.z && git push origin vx.y.z`.
+2. Run the `SoakTest` (above) and compare `scripts/bench-throughput.sh` against the previous release.
+3. Merge to `main`.
+4. Tag it: `git tag vx.y.z && git push origin vx.y.z`.
 
 The tag runs `.github/workflows/release.yml`:
 - it builds and tests the proxy, and checks the tag against the pom version;
