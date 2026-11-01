@@ -1,0 +1,19 @@
+# The release image: packages a jar built beforehand (./mvnw package), so it can be built for
+# several platforms without compiling under emulation. For a build from source, use Dockerfile.
+#
+# glibc-based on purpose: Glide's native library exists for linux x86_64 and aarch64 (glibc), but
+# for musl (Alpine) only on x86_64.
+FROM docker.io/eclipse-temurin:25-jre
+
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin valkeyway
+WORKDIR /app
+COPY target/valkeyway-*.jar app.jar
+USER valkeyway
+
+EXPOSE 6379 6380
+
+# No curl or wget in the image: ask the health endpoint over bash's /dev/tcp.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6380 && printf 'GET /actuator/health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
