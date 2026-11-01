@@ -227,7 +227,6 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error
 - Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, WAIT, etc.) run on a pool of dedicated backend clients (`proxy.blocking-pool`), so they don't hold up other clients
-- Pipelined commands from one connection are executed one at a time (replies are still batched)
 - Set replies (SMEMBERS, SINTER, ...) contain the right members but not necessarily in the server's iteration order
 - Pub/Sub commands (SUBSCRIBE, PSUBSCRIBE) are not supported
 - RESP2 only (HELLO 3 is answered with protocol 2)

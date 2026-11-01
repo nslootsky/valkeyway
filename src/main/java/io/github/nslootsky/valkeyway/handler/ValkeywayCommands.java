@@ -22,7 +22,9 @@ public final class ValkeywayCommands {
 
     public static CommandTable create(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore,
                                       MetricsCollector metrics, BlockingClientPool blockingPool) {
-        return new CommandTable(new CatchAllCommand(glideClientCache, metrics, blockingPool))
+        CatchAllCommand catchAll = new CatchAllCommand(glideClientCache, metrics, blockingPool);
+        catchAll.warmUp();
+        return new CommandTable(catchAll)
                 .register("ping", new PingCommand())
                 .register("echo", new EchoCommand())
                 .register("time", new TimeCommand())

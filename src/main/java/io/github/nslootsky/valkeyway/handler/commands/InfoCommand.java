@@ -7,13 +7,13 @@ package io.github.nslootsky.valkeyway.handler.commands;
 
 import io.github.nslootsky.valkeyway.metrics.MetricsCollector;
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
 /**
  * INFO: proxy-specific info with role:master, compatible with Glide's standalone mode detection.
  */
-public class InfoCommand implements CommandHandler {
+public class InfoCommand implements InlineCommandHandler {
 
     private final MetricsCollector metrics;
 

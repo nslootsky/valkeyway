@@ -84,6 +84,11 @@ public class GlideClientCache {
         });
     }
 
+    /** The client for {@code db} if it already exists, without creating one (never blocks). */
+    public GlideClusterClient getIfPresent(int db) {
+        return cache.getIfPresent(db);
+    }
+
     /**
      * Creates a new, uncached client for the given database. The caller owns it and must close it.
      */

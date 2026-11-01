@@ -93,7 +93,7 @@ About 900 lines in total, replacing resp-server (2,650) and RxJava.
 
 Inside MULTI, commands are only queued locally (no backend call); EXEC is the barrier.
 
-Caveat: during resharding, Glide's MOVED/ASK retries can reorder two in-flight commands to the *same* slot. Pipelines to a standalone server never see this. I consider it acceptable, but it's worth knowing.
+Caveat: during resharding, Glide's MOVED/ASK retries can reorder two in-flight commands to the *same* slot. Pipelines to a standalone server never see this. I consider it acceptable, but it's worth knowing. (Superseded: see phase 2 below; commands from one connection now reach Glide as one unit at a time, so this can only happen inside a batch.)
 
 ## Threading
 
@@ -138,7 +138,7 @@ Each phase ends green on the full suite and with a benchmark run.
 
 0. **Fix the node stall now, on the current code:** route blocking commands through a leased pool. It's independent of the protocol layer and fixes a correctness bug. *Done:* a same-slot GET during a BLPOP now answers in ~4 ms instead of failing after 2 s; throughput is unchanged (A/B within ±2%).
 1. **New transport, decoder, encoder and `Connection`; resp-server removed.** Existing handlers run via a sync adapter on a per-connection virtual thread (serial, no pipelining yet). This alone removes event-loop blocking (thread stall), fixes the idle disconnect, 64-bit integers and the null array. *Done:* thread stall gone (max PING 37 ms with a client blocked in BLPOP, was 4.8 s); throughput +10–23% at 200 clients; correct 64-bit integers, both RESP2 nulls and status replies (72 differential cases). Cost: a single connection doing request/response is ~5 µs slower per request (~30k vs ~36k rps), because each command now hops to a virtual thread and back. Phase 2's async path removes that hop.
-2. **Async hot path:** `CatchAllCommand` returns its future, with the ordered pipeline and barriers. This is the throughput phase.
+2. **Async hot path:** `CatchAllCommand` returns its future, with the ordered pipeline and barriers. This is the throughput phase. *Done:* Glide turned out **not** to keep the order of separately submitted requests (pipelined `INCR`s on one key came back swapped), but it does keep order within a non-atomic `ClusterBatch` (0 violations in 200k commands). So each connection sends at most one backend unit at a time: a single command, or one batch of everything that queued up meanwhile. Results: request/response back to ~36k rps (+18–23% over phase 1); pipelined clients 2.4–4.4× faster (one client with P=16: 45k → 200k; 50–200 clients with P=16: 160–180k → 410–530k). Unpipelined many-client throughput is unchanged (~150–170k): each request still goes to Glide on its own, and Glide caps single requests at ~210k/s for the whole process.
 3. RESP3 and `HELLO 3`.
 4. Client TLS and AUTH (plus backend credentials/TLS in the same release).
 
@@ -152,6 +152,7 @@ Each phase ends green on the full suite and with a benchmark run.
 
 - **Glide reply integrity.** Unrouted `customCommand` misreads top-level map replies as multi-node results (order lost, binary keys corrupted; valkey-glide #4963), and Glide reshapes some replies by command name. Fixed in `0224d36` (explicit `SlotIdRoute` for map-reply commands) and `e5acdb3` (`Resp2Shapes`). The new encoder must keep both, and `DifferentialRepliesTest` is the check that it does.
 - **Glide's routed call path costs ~1.5 µs more CPU per request** (our own slot lookup is ~50 ns). Routing every command cost 4–6% throughput, so only map-reply commands are routed.
+- **Glide limits (measured 2026-11-01).** Single requests top out at ~210k/s for the whole process, regardless of the number of Glide clients or submitting threads, so extra Glide clients per DB don't help. Glide also rejects requests beyond 1000 in flight per client by default; the proxy now sets `inflightRequestsLimit` to 50000 (`68fe1da`). Batches cost ~2.3 µs per command against ~17 µs for a single request.
 - **The ~150k rps plateau may be partly Glide, not just our blocked event loops.** At the plateau the proxy used only ~3 of 24 cores (~24 µs of CPU per request), and extra Glide-side work lowered throughput more than its CPU cost explains, which suggests a serialization point per Glide client. Phase 2 should first measure throughput against the number of Glide clients per DB, before attributing all of the gain to async pipelining.
 
 ## Decisions (2026-10-31)

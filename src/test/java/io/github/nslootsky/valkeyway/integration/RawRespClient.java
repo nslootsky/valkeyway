@@ -49,6 +49,27 @@ public class RawRespClient implements AutoCloseable {
     }
 
     public Object call(String... args) throws IOException {
+        out.write(encode(args));
+        out.flush();
+        return read();
+    }
+
+    /** Sends all commands at once, then reads one reply per command. */
+    public List<Object> pipeline(List<String[]> commands) throws IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        for (String[] command : commands) {
+            buf.writeBytes(encode(command));
+        }
+        out.write(buf.toByteArray());
+        out.flush();
+        List<Object> replies = new ArrayList<>(commands.size());
+        for (int i = 0; i < commands.size(); i++) {
+            replies.add(read());
+        }
+        return replies;
+    }
+
+    private static byte[] encode(String... args) {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         buf.writeBytes(("*" + args.length + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
         for (String arg : args) {
@@ -57,9 +78,7 @@ public class RawRespClient implements AutoCloseable {
             buf.writeBytes(bytes);
             buf.writeBytes("\r\n".getBytes(StandardCharsets.ISO_8859_1));
         }
-        out.write(buf.toByteArray());
-        out.flush();
-        return read();
+        return buf.toByteArray();
     }
 
     private Object read() throws IOException {

@@ -6,13 +6,13 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
 /**
  * ECHO message: answered by the proxy itself.
  */
-public class EchoCommand implements CommandHandler {
+public class EchoCommand implements InlineCommandHandler {
 
     @Override
     public Reply execute(Request request) {

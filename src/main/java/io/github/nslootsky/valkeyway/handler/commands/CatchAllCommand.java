@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import glide.api.GlideClusterClient;
+import glide.api.models.ClusterBatch;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
 import glide.api.models.exceptions.RequestException;
@@ -21,23 +22,31 @@ import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.reply.GlideReplies;
 import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
 import io.github.nslootsky.valkeyway.reply.ServerErrors;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.AsyncCommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * Fallback handler for every command without a dedicated handler: forwards it via Glide's
  * customCommand(), or queues it while the connection is in MULTI.
+ *
+ * <p>Most commands start asynchronously on the network thread (see {@link #canRunAsync}), so a
+ * connection can pipeline them. The rest run through {@link #execute} on a virtual thread.
  */
-public class CatchAllCommand implements CommandHandler {
+public class CatchAllCommand implements AsyncCommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CatchAllCommand.class);
 
@@ -46,10 +55,127 @@ public class CatchAllCommand implements CommandHandler {
     private final BlockingClientPool blockingPool;
     private final CommandKeyExtractor keyExtractor = new CommandKeyExtractor();
 
+    private static final Executor FALLBACK = Executors.newVirtualThreadPerTaskExecutor();
+
     public CatchAllCommand(GlideClientCache glideClientCache, MetricsCollector metrics, BlockingClientPool blockingPool) {
         this.glideClientCache = glideClientCache;
         this.metrics = metrics;
         this.blockingPool = blockingPool;
+    }
+
+    /**
+     * Async unless the command needs connection state handled on the barrier path (MULTI queueing,
+     * CLIENT, WATCH/UNWATCH), may block (BLPOP & co. use a leased client), or would block the network
+     * thread to set something up (the database's first Glide client, the COMMAND table).
+     */
+    @Override
+    public boolean canRunAsync(Request request) {
+        Connection connection = request.connection();
+        byte[][] args = request.args();
+        if (connection.inTransaction() || isBarrierCommand(args[0]) || BlockingCommands.detect(args).isPresent()) {
+            return false;
+        }
+        if (glideClientCache.getIfPresent(connection.db()) == null) {
+            return false;
+        }
+        return !MapReplyCommands.mayReturnMap(args) || keyExtractor.isLoaded();
+    }
+
+    @Override
+    public CompletionStage<Reply> executeAsync(Request request, Executor replyExecutor) {
+        GlideClusterClient client = glideClientCache.getIfPresent(request.connection().db());
+        if (client == null) {
+            // Evicted since canRunAsync: create it off the network thread (execute() records metrics).
+            return CompletableFuture.supplyAsync(() -> execute(request), FALLBACK);
+        }
+        byte[][] args = request.args();
+        var timer = metrics.startTimer();
+        metrics.recordCommand(request.command());
+        return send(client, args).handleAsync((result, error) -> {
+            metrics.stopTimer(timer);
+            Reply reply = error != null ? ServerErrors.error(unwrap(error)) : toReply(args, result);
+            if (reply instanceof Reply.Error) {
+                metrics.recordError();
+            }
+            return reply;
+        }, replyExecutor);
+    }
+
+    /**
+     * A pipeline: one non-atomic ClusterBatch, which Glide executes in order per node (separately
+     * submitted commands can be reordered). Batch results don't go through Glide's ClusterValue, so
+     * map replies keep their order and bytes without explicit routing.
+     */
+    @Override
+    public CompletionStage<List<Reply>> executeBatchAsync(List<Request> requests, Executor replyExecutor) {
+        GlideClusterClient client = glideClientCache.getIfPresent(requests.getFirst().connection().db());
+        if (client == null) {
+            return CompletableFuture.supplyAsync(() -> requests.stream().map(this::execute).toList(), FALLBACK);
+        }
+        ClusterBatch batch = new ClusterBatch(false).withBinaryOutput();
+        for (Request request : requests) {
+            byte[][] args = request.args();
+            GlideString[] glideArgs = new GlideString[args.length];
+            for (int i = 0; i < args.length; i++) {
+                glideArgs[i] = GlideString.of(args[i]);
+            }
+            batch.customCommand(glideArgs);
+            metrics.recordCommand(request.command());
+        }
+        var timer = metrics.startTimer();
+        return client.exec(batch, false).handleAsync((results, error) -> {
+            metrics.stopTimer(timer);
+            List<Reply> replies = new ArrayList<>(requests.size());
+            for (int i = 0; i < requests.size(); i++) {
+                Reply reply;
+                if (error != null) {
+                    reply = ServerErrors.error(unwrap(error));
+                } else if (results == null || i >= results.length) {
+                    reply = Reply.error("ERR missing reply in pipeline");
+                } else {
+                    reply = GlideReplies.toReply(Resp2Shapes.shape(requests.get(i).args(), results[i]));
+                }
+                if (reply instanceof Reply.Error) {
+                    metrics.recordError();
+                }
+                replies.add(reply);
+            }
+            return replies;
+        }, replyExecutor);
+    }
+
+    private static boolean isBarrierCommand(byte[] name) {
+        return switch (name.length) {
+            case 5 -> equalsIgnoreCase(name, "WATCH");
+            case 6 -> equalsIgnoreCase(name, "CLIENT");
+            case 7 -> equalsIgnoreCase(name, "UNWATCH");
+            default -> false;
+        };
+    }
+
+    private static boolean equalsIgnoreCase(byte[] name, String expected) {
+        for (int i = 0; i < name.length; i++) {
+            if ((name[i] | 0x20) != (expected.charAt(i) | 0x20)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static Throwable unwrap(Throwable e) {
+        return (e instanceof java.util.concurrent.CompletionException || e instanceof ExecutionException) && e.getCause() != null
+                ? e.getCause() : e;
+    }
+
+    /** Loads routing metadata in the background so map-reply commands can start async soon after startup. */
+    public void warmUp() {
+        Thread.ofVirtual().name("catchall-warmup").start(() -> {
+            try {
+                keyExtractor.preload(glideClientCache.getClient(0));
+            } catch (Exception e) {
+                log.warn("Warm-up failed; routing metadata will load on first use: {}", e.getMessage());
+            }
+        });
     }
 
     @Override

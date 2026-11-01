@@ -6,13 +6,13 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
 /**
  * PING [message]: answered by the proxy itself.
  */
-public class PingCommand implements CommandHandler {
+public class PingCommand implements InlineCommandHandler {
 
     @Override
     public Reply execute(Request request) {

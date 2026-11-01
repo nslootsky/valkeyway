@@ -6,7 +6,7 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
 import java.util.List;
@@ -14,7 +14,7 @@ import java.util.List;
 /**
  * HELLO: answers like a standalone server speaking RESP2, without contacting the cluster.
  */
-public class HelloCommand implements CommandHandler {
+public class HelloCommand implements InlineCommandHandler {
 
     @Override
     public Reply execute(Request request) {

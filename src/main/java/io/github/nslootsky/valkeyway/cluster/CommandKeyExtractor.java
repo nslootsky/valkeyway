@@ -44,6 +44,16 @@ public class CommandKeyExtractor {
         this.table = table;
     }
 
+    /** Whether the command table is loaded, so key lookups never block. */
+    public boolean isLoaded() {
+        return table != null;
+    }
+
+    /** Loads the command table now (blocking), e.g. at startup. */
+    public void preload(GlideClusterClient client) {
+        loadTable(client);
+    }
+
     /** Returned by {@link #singleSlot} when a command has no keys, or keys in more than one slot. */
     public static final int NO_SLOT = -1;
 

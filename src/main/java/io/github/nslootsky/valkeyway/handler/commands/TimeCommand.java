@@ -6,7 +6,7 @@
 package io.github.nslootsky.valkeyway.handler.commands;
 
 import io.github.nslootsky.valkeyway.protocol.Reply;
-import io.github.nslootsky.valkeyway.server.CommandHandler;
+import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
 import io.github.nslootsky.valkeyway.server.Request;
 
 import java.time.Instant;
@@ -14,7 +14,7 @@ import java.time.Instant;
 /**
  * TIME: the proxy's clock, as [unix seconds, microseconds].
  */
-public class TimeCommand implements CommandHandler {
+public class TimeCommand implements InlineCommandHandler {
 
     @Override
     public Reply execute(Request request) {
