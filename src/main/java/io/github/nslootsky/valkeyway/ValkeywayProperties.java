@@ -185,6 +185,8 @@ public record ValkeywayProperties(
     public record Tls(int port, String certFile, String keyFile, String keyPassword, String caFile,
                       TlsContext.ClientCerts clientCerts, List<String> protocols) {
         public Tls {
+            if (keyPassword != null && keyPassword.isEmpty()) keyPassword = null;
+            if (caFile != null && caFile.isEmpty()) caFile = null;
             if (port < 0 || port > 65535) throw new IllegalArgumentException("Invalid proxy.tls.port");
             if (port > 0 && (certFile == null || keyFile == null)) {
                 throw new IllegalArgumentException("proxy.tls.port needs proxy.tls.cert-file and proxy.tls.key-file");
@@ -197,12 +199,15 @@ public record ValkeywayProperties(
     /**
      * How the proxy connects to the cluster. Prefix: proxy.backend.*
      *
-     * @param username user for the cluster's AUTH; unset = {@code default}
-     * @param password password for the cluster's AUTH; unset = no AUTH
+     * @param username user for the cluster's AUTH; unset or empty = {@code default}
+     * @param password password for the cluster's AUTH; unset or empty = no AUTH (so
+     *        {@code ${VALKEY_PASSWORD:}} with the variable unset means none)
      */
     public record Backend(String username, String password, BackendTls tls) {
         public Backend {
             if (tls == null) tls = new BackendTls(false, null, false);
+            if (username != null && username.isEmpty()) username = null;
+            if (password != null && password.isEmpty()) password = null;
             if (username != null && password == null) {
                 throw new IllegalArgumentException("proxy.backend.username needs proxy.backend.password");
             }
@@ -217,7 +222,11 @@ public record ValkeywayProperties(
      * @param insecure skip certificate verification (self-signed certificates, or names that don't
      *                 match the nodes' addresses)
      */
-    public record BackendTls(boolean enabled, String caFile, boolean insecure) {}
+    public record BackendTls(boolean enabled, String caFile, boolean insecure) {
+        public BackendTls {
+            if (caFile != null && caFile.isEmpty()) caFile = null;
+        }
+    }
 
     /**
      * {@code proxy.node-admin-commands}: commands that administer a single node (SHUTDOWN, REPLICAOF,

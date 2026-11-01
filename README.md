@@ -60,6 +60,8 @@ valkey-cli GET mykey
 - TLS for clients on a separate port, alongside or instead of plain text, optionally requiring client certificates. Certificates are reloaded when their files change.
 - TLS and a username/password to the cluster.
 
+All of it is off by default; [docs/SECURITY.md](docs/SECURITY.md) shows how to set it up.
+
 **Operations**: health checks, metrics and Prometheus through Spring Boot Actuator on port 6380.
 
 ## Architecture
@@ -165,6 +167,8 @@ management:
     health:
       show-details: always
 ```
+
+For passwords, TLS and their environment variables, see [docs/SECURITY.md](docs/SECURITY.md).
 
 With TLS to the cluster, Glide checks each node's certificate against the address the cluster reports for it (usually an IP), so the certificates must name those addresses or `insecure` must be set. Glide can't present a client certificate, so the cluster must not require one (`tls-auth-clients no` or `optional`).
 
@@ -293,6 +297,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 ## Design notes and upstream assumptions
 
+- [docs/SECURITY.md](docs/SECURITY.md): client passwords, TLS for clients and to the cluster, in practice.
 - [docs/RESP_LAYER.md](docs/RESP_LAYER.md): design of the client protocol layer, measurements, and findings about Glide.
 - [docs/UPSTREAM_ASSUMPTIONS.md](docs/UPSTREAM_ASSUMPTIONS.md): every detail of valkey-glide and Valkey that the proxy relies on but that isn't a stable API, such as Glide's error message formats, the Java types it returns, what it retries, and Valkey's reply formats. Each entry lists the code it affects (tagged `[upstream:ID]`) and the test that catches a change. Check it when upgrading either.
 

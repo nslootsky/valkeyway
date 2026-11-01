@@ -7,12 +7,15 @@ package io.github.nslootsky.valkeyway;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
+import io.github.nslootsky.valkeyway.server.TlsContext;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 class ValkeywayPropertiesTest {
 
@@ -44,6 +47,52 @@ class ValkeywayPropertiesTest {
     void newNameWinsOverOldName() {
         ValkeywayProperties props = bind(Map.of("proxy.connect-timeout-ms", "1500", "proxy.request-timeout-ms", "4000"));
         assertEquals(4000, props.requestTimeoutMs());
+    }
+
+    /** The environment variable names docs/SECURITY.md gives. */
+    @Test
+    void securitySettingsBindFromEnvironmentVariables() {
+        Map<String, Object> env = Map.of(
+                "PROXY_PORT", "0",
+                "PROXY_CLUSTERNODES", "127.0.0.1:7000",
+                "PROXY_AUTH_PASSWORD", "secret",
+                "PROXY_AUTH_USERS_APP", "apppw",
+                "PROXY_TLS_PORT", "6379",
+                "PROXY_TLS_CERTFILE", "/tls/tls.crt",
+                "PROXY_TLS_KEYFILE", "/tls/tls.key",
+                "PROXY_TLS_CLIENTCERTS", "required",
+                "PROXY_TLS_CAFILE", "/tls/ca.crt",
+                "PROXY_BACKEND_TLS_ENABLED", "true");
+        Map<String, Object> more = new HashMap<>(env);
+        more.put("PROXY_BACKEND_USERNAME", "proxy");
+        more.put("PROXY_BACKEND_PASSWORD", "backend-pw");
+        more.put("PROXY_BACKEND_TLS_INSECURE", "true");
+        var source = new SystemEnvironmentPropertySource("systemEnvironment", more);
+        ValkeywayProperties props = new Binder(ConfigurationPropertySources.from(source))
+                .bind("proxy", ValkeywayProperties.class).get();
+        assertEquals(0, props.port());
+        assertEquals("secret", props.auth().password());
+        assertEquals(Map.of("app", "apppw"), props.auth().users());
+        assertEquals(6379, props.tls().port());
+        assertEquals("/tls/tls.crt", props.tls().certFile());
+        assertEquals("/tls/tls.key", props.tls().keyFile());
+        assertEquals("/tls/ca.crt", props.tls().caFile());
+        assertEquals(TlsContext.ClientCerts.REQUIRED, props.tls().clientCerts());
+        assertEquals("proxy", props.backend().username());
+        assertEquals("backend-pw", props.backend().password());
+        assertTrue(props.backend().tls().enabled());
+        assertTrue(props.backend().tls().insecure());
+    }
+
+    /** {@code ${VALKEY_PASSWORD:}} with the variable unset is an empty string: no password, not an empty one. */
+    @Test
+    void emptySecretsMeanNone() {
+        ValkeywayProperties props = bind(Map.of("proxy.auth.password", "", "proxy.backend.password", "",
+                "proxy.backend.username", "", "proxy.backend.tls.ca-file", ""));
+        assertNull(props.backend().password());
+        assertNull(props.backend().username());
+        assertNull(props.backend().tls().caFile());
+        assertFalse(new io.github.nslootsky.valkeyway.server.Users(props.auth().password(), props.auth().users()).authRequired());
     }
 
     @Test
