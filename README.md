@@ -208,9 +208,9 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 ## Tech Stack
 
 - Java 25
-- Spring Boot 4.1.0
+- Spring Boot 4.1.2
 - resp-server (client-facing RESP server)
-- valkey-glide 2.5.0 (cluster client)
+- valkey-glide 2.5.3 (cluster client)
 - Micrometer + Spring Boot Actuator (metrics and health)
 - Maven Wrapper
 
