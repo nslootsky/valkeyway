@@ -31,13 +31,13 @@ valkey-cli GET mykey
 ## Features
 
 **Standalone compatibility**
-- Works with any RESP2 client, no cluster support needed. Replies match what a standalone Valkey server sends, including:
+- Works with any RESP2 or RESP3 (`HELLO 3`) client, no cluster support needed. Replies match what a standalone Valkey server sends, in either protocol, including:
   - reply shapes that Glide changes;
   - null arrays versus null bulk strings;
   - number formats;
   - error codes.
 
-  More than 70 commands are checked byte for byte against a direct connection to a node.
+  More than 70 commands are checked byte for byte against a direct connection to a node, in both protocols.
 - Cross-slot commands such as DEL, MGET and UNLINK are split per slot and aggregated.
 - Multiple databases: SELECT with per-connection state (Valkey 9+ cluster mode).
 - Transactions: MULTI/EXEC and WATCH, atomic when all keys share a slot (use hash tags such as `{user1}`). Queue-time errors and EXECABORT behave as in Valkey, and WATCH is private to each client connection.
@@ -276,7 +276,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - MULTI/EXEC/DISCARD (transactions, queued by the proxy; atomic within a slot)
 - WATCH/UNWATCH (on a dedicated backend client per connection)
 - INFO (proxy-specific response with role:master)
-- HELLO (standalone-mode response; HELLO ... AUTH and SETNAME)
+- HELLO (RESP2 or RESP3, standalone-mode response; HELLO ... AUTH and SETNAME)
 - CLUSTER (standalone errors for INFO/NODES; others proxied)
 - COMMAND (all subcommands proxied; DOCS format adjusted for redis-cli)
 - PING, ECHO, TIME, QUIT (answered by the proxy)
@@ -312,7 +312,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 
 ## Limitations
 
-- RESP2 only (HELLO 3 is answered with protocol 2).
+- RESP3 push messages aren't sent, since there is no Pub/Sub or client tracking yet.
 - Proxy users have no ACL rules: every user can run every command. AUTH and HELLO are rejected inside MULTI.
 - TLS to the cluster can't use a client certificate (a Glide limitation).
 - Private keys must be PKCS#8 (`BEGIN PRIVATE KEY`); convert others with `openssl pkcs8 -topk8 -nocrypt`.
@@ -326,4 +326,4 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - A primary that hangs without closing its connections isn't routed around until it answers again (see [Cluster changes](#cluster-changes)).
 - SCAN cursors are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one) and only in the database it started in.
 - SCAN returns keys whose bytes aren't valid UTF-8 with those bytes replaced, and MATCH patterns with such bytes match nothing (a Glide limitation). Other commands are binary-safe.
-- Set replies (SMEMBERS, SINTER, ...) contain the right members, but not necessarily in the server's iteration order.
+- Set replies (SMEMBERS, SINTER, ..., and the sets inside COMMAND INFO and COMMAND DOCS) contain the right members, but not necessarily in the server's order: Glide returns them as unordered Java sets.

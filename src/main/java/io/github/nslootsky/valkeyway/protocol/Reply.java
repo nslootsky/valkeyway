@@ -10,8 +10,10 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * A reply to a client, in protocol-neutral form. {@link ReplyEncoder} writes it as RESP2, mapping the
- * RESP3-only types (map, set, double, boolean, big number) the way a RESP2 server would.
+ * A reply to a client, in protocol-neutral form. {@link ReplyEncoder} writes it as RESP3, or as RESP2
+ * with the RESP3-only types (map, set, double, boolean, big number, verbatim string) mapped the way a
+ * RESP2 server maps them. Where Valkey's two shapes differ in structure (WITHSCORES results, XREAD),
+ * a dedicated type carries both.
  */
 public sealed interface Reply {
 
@@ -54,6 +56,22 @@ public sealed interface Reply {
     /** RESP3 {@code ,}. RESP2: bulk string in Valkey's double format. */
     record Double(double value) implements Reply {}
 
+    /** A double already formatted (geo coordinates): RESP3 {@code ,text}, RESP2 bulk {@code text}. */
+    record FormattedDouble(String text) implements Reply {}
+
+    /** RESP3 {@code =} with format {@code txt} (INFO, CLIENT LIST, ...). RESP2: bulk string. */
+    record Verbatim(String text) implements Reply {}
+
+    /**
+     * RESP3: an array of two-element arrays, {@code [[a, b], [c, d]]}. RESP2: flat, {@code [a, b, c, d]}.
+     * (WITHSCORES and WITHVALUES results.) {@code items} is flat and of even length.
+     */
+    record FlatPairs(List<Reply> items) implements Reply {}
+
+    /**
+     * RESP3: a map. RESP2: an array of two-element arrays, {@code [[k1, v1], [k2, v2]]} (XREAD).
+     */
+    record NestedMap(List<Reply> keysAndValues) implements Reply {}
     /** RESP3 {@code #}. RESP2: integer 1/0. */
     record Bool(boolean value) implements Reply {}
 

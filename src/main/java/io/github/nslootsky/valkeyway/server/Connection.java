@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.server;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.CompletionException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
+import io.github.nslootsky.valkeyway.protocol.ReplyEncoder;
 import io.github.nslootsky.valkeyway.protocol.RespDecoder;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -63,13 +64,19 @@ public final class Connection {
     static final int MAX_IN_FLIGHT = 1000;
 
     /** A reply position, in request order. */
-    private static final class Slot {
+    private final class Slot {
         final byte[] name;
         final long started = System.nanoTime();
         Reply reply;
         boolean done;
         boolean barrier;
         boolean closeAfter;
+        /**
+         * Whether to send the reply as RESP3: the protocol when the command ran, as on a server, which
+         * encodes each reply as it executes. Commands that may switch it (HELLO, RESET) are inline or
+         * barriers and take it again after running.
+         */
+        boolean resp3 = protocol == 3;
 
         Slot(byte[] name) {
             this.name = name;
@@ -113,6 +120,8 @@ public final class Connection {
     private String name;
     /** The authenticated user, or {@code null} before AUTH when a password is required. */
     private volatile String user;
+    /** RESP version, 2 or 3 (HELLO). */
+    private volatile int protocol = 2;
     private boolean inTransaction;
     /** State kept by command handlers; see {@link ConnectionKey}. Written by barriers, read anywhere. */
     private final Map<ConnectionKey<?>, Object> attributes = new ConcurrentHashMap<>(4);
@@ -183,7 +192,9 @@ public final class Connection {
     private void addInline(CommandHandler handler, Request request) {
         Slot slot = new Slot(request.args()[0]);
         slots.add(slot);
-        complete(slot, execute(handler, request));
+        Reply reply = execute(handler, request);
+        slot.resp3 = protocol == 3;
+        complete(slot, reply);
     }
 
     /** Records a slot's reply and tells the listener. Event loop only. */
@@ -283,6 +294,9 @@ public final class Connection {
         if (closed) {
             return;
         }
+        if (slot.barrier) {
+            slot.resp3 = protocol == 3;
+        }
         complete(slot, reply);
         if (slot.barrier) {
             barrierRunning = false;
@@ -299,7 +313,7 @@ public final class Connection {
         while (!closed && (head = slots.peek()) != null && head.done) {
             slots.poll();
             if (sendReply()) {
-                channel.write(head.reply);
+                channel.write(head.resp3 ? new ReplyEncoder.Resp3(head.reply) : head.reply);
                 wrote = true;
             }
             if (head.closeAfter) {
@@ -494,6 +508,16 @@ public final class Connection {
 
     public String name() {
         return name;
+    }
+
+    /** The RESP version the client speaks: 2, or 3 after {@code HELLO 3}. */
+    public int protocol() {
+        return protocol;
+    }
+
+    /** Switches the RESP version for the replies to this command and later ones. */
+    public void protocol(int protocol) {
+        this.protocol = protocol;
     }
 
     /** The authenticated user; {@code null} if the connection hasn't authenticated and must. */

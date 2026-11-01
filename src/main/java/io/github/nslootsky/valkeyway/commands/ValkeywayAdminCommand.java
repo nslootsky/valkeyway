@@ -89,7 +89,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
                 + "total_error_replies:" + (long) metrics.getTotalErrors() + "\r\n"
                 + "\r\n# Config\r\n"
                 + configLines();
-        return Reply.bulk(text);
+        return new Reply.Verbatim(text);
     }
 
     private String configLines() {
@@ -107,7 +107,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
             return Reply.error("ERR syntax error");
         }
         Connection client = request.connection().registry().find(id);
-        return client == null ? Reply.error("ERR No such client") : Reply.bulk(clients.line(client) + "\n");
+        return client == null ? Reply.error("ERR No such client") : new Reply.Verbatim(clients.line(client) + "\n");
     }
 
     private Reply configGet(String pattern) {
@@ -124,7 +124,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
     private Reply clusterInfo(Request request) {
         try {
             GlideClusterClient client = backendClients.getClient(request.connection().db());
-            return Reply.bulk(client.clusterInfo().get());
+            return new Reply.Verbatim(client.clusterInfo().get());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return Reply.error("ERR interrupted");

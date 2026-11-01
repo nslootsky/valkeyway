@@ -22,9 +22,10 @@ import java.util.Set;
  * Converts the Java values Glide returns into {@link Reply}s.
  *
  * <p>With binary output, Glide returns bulk strings as {@link GlideString}, and most status replies
- * too (those are restored per command in {@link Resp2Shapes}). A {@link String} at the top level of
+ * too (those are restored per command in {@link ReplyShapes}). A {@link String} at the top level of
  * a reply is a status (in practice OK) unless it contains a line break: RESP3 verbatim strings
- * (CLIENT LIST, CLUSTER INFO, ...) also arrive as {@code String} and are bulk strings in RESP2.
+ * (MEMORY DOCTOR, CLUSTER INFO, ...) also arrive as {@code String}, and are sent as verbatim strings
+ * again (bulk strings in RESP2). Booleans become integers, as Valkey sends them.
  * Strings nested inside a reply come from Glide's per-command conversions (e.g. LCS IDX map keys)
  * and were bulk strings on the wire.
  *
@@ -50,6 +51,11 @@ public final class GlideReplies {
         return value instanceof String s ? simpleOrText(s) : nested(value);
     }
 
+    /** Converts a value nested inside a reply (strings are bulk strings). */
+    public static Reply element(Object value) {
+        return nested(value);
+    }
+
     private static Reply nested(Object value) {
         return switch (value) {
             case null -> Reply.Null.BULK;
@@ -60,7 +66,9 @@ public final class GlideReplies {
             case Integer i -> Reply.integer(i);
             case java.lang.Double d -> new Reply.Double(d);
             case Float f -> new Reply.Double(f);
-            case Boolean b -> new Reply.Bool(b);
+            // Glide turns some integer replies into booleans by command name (SMISMEMBER, ...);
+            // Valkey sends integers, in RESP3 too.
+            case Boolean b -> Reply.integer(b ? 1 : 0);
             case BigInteger bi -> new Reply.BigNumber(bi.toString());
             case BigDecimal bd -> new Reply.BigNumber(bd.toPlainString());
             case Number n -> Reply.integer(n.longValue());
@@ -96,7 +104,7 @@ public final class GlideReplies {
             case "PONG" -> Reply.PONG;
             case "QUEUED" -> Reply.QUEUED;
             default -> s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0
-                    ? new Reply.Bulk(s.getBytes(StandardCharsets.UTF_8))
+                    ? new Reply.Verbatim(s)
                     : new Reply.Simple(s);
         };
     }

@@ -33,7 +33,8 @@ public final class MapReplyCommands {
             "xrange", "xrevrange", "xclaim",            // map of id to fields
             "xread", "xreadgroup",                      // map of stream to entries
             "xinfo",
-            "lcs");                                     // IDX -> map
+            "lcs",                                      // IDX -> map
+            "lmpop", "blmpop");                         // map of key to elements
 
     private MapReplyCommands() {}
 
@@ -42,9 +43,9 @@ public final class MapReplyCommands {
         if (args.length < 2 || args[0].length < 3 || args[0].length > 10) {
             return false;
         }
-        // Cheap pre-check: every name above starts with h, z, x or l.
+        // Cheap pre-check: every name above starts with h, z, x, l or b.
         switch (args[0][0] | 0x20) {
-            case 'h', 'z', 'x', 'l' -> { }
+            case 'h', 'z', 'x', 'l', 'b' -> { }
             default -> {
                 return false;
             }
