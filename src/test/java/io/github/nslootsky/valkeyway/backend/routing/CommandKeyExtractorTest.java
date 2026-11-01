@@ -178,4 +178,28 @@ class CommandKeyExtractorTest {
         List<byte[]> keys = MovableKeys.parse(name, args(all));
         return keys == null ? null : keys.stream().map(b -> new String(b, StandardCharsets.UTF_8)).toList();
     }
+
+    /** After a cluster upgrade adds a command, the next unknown-command check reloads the table, at most once a minute. */
+    @Test
+    void anUnknownCommandReloadsTheTableAtMostOncePerInterval() {
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
+        java.util.concurrent.atomic.AtomicInteger loads = new java.util.concurrent.atomic.AtomicInteger();
+        Map<String, KeySpec> old = Map.of("get", new KeySpec(2, 1, 1, 1, false, Map.of()));
+        Map<String, KeySpec> upgraded = Map.of("get", new KeySpec(2, 1, 1, 1, false, Map.of()),
+                "newcmd", new KeySpec(-1, 0, 0, 0, false, Map.of()));
+        CommandKeyExtractor extractor = new CommandKeyExtractor(
+                client -> loads.incrementAndGet() == 1 ? old : upgraded, now::get);
+
+        assertNull(extractor.queueError(null, args("GET", "k")));
+        assertEquals(1, loads.get());
+        now.set(java.util.concurrent.TimeUnit.SECONDS.toNanos(5));
+        assertTrue(extractor.queueError(null, args("NEWCMD")).startsWith("ERR unknown command"),
+                "within the interval: no reload, still unknown");
+        assertEquals(1, loads.get());
+        now.set(java.util.concurrent.TimeUnit.SECONDS.toNanos(61));
+        assertNull(extractor.queueError(null, args("NEWCMD")), "reloaded: now known");
+        assertEquals(2, loads.get());
+        assertTrue(extractor.queueError(null, args("NOSUCH")).startsWith("ERR unknown command"));
+        assertEquals(2, loads.get(), "a fresh table isn't reloaded again right away");
+    }
 }

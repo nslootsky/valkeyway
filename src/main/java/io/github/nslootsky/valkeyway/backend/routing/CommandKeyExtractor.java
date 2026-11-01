@@ -47,13 +47,28 @@ public class CommandKeyExtractor {
         }
     }
 
-    private volatile Map<String, KeySpec> table;
+    /** Reloads for a command missing from the table happen at most this often. */
+    static final long RELOAD_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
 
-    public CommandKeyExtractor() {}
+    private volatile Map<String, KeySpec> table;
+    private final java.util.function.Function<GlideClusterClient, Map<String, KeySpec>> loader;
+    private final java.util.function.LongSupplier clock;
+    private long loadedAt;
+
+    public CommandKeyExtractor() {
+        this(CommandKeyExtractor::fetchTable, System::nanoTime);
+    }
 
     /** For tests: use a fixed command table instead of loading it from the cluster. */
     CommandKeyExtractor(Map<String, KeySpec> table) {
+        this(client -> table, System::nanoTime);
         this.table = table;
+    }
+
+    CommandKeyExtractor(java.util.function.Function<GlideClusterClient, Map<String, KeySpec>> loader,
+                        java.util.function.LongSupplier clock) {
+        this.loader = loader;
+        this.clock = clock;
     }
 
     /** Whether the command table is loaded, so key lookups never block. */
@@ -149,6 +164,11 @@ public class CommandKeyExtractor {
         String name = lower(args[0]);
         KeySpec spec = specs.get(name);
         if (spec == null) {
+            // Maybe the cluster was upgraded since the table was loaded and knows commands we don't.
+            Map<String, KeySpec> reloaded = reloadIfStale(client);
+            spec = reloaded != null ? reloaded.get(name) : null;
+        }
+        if (spec == null) {
             return unknownCommand(args);
         }
         String fullName = name;
@@ -215,18 +235,48 @@ public class CommandKeyExtractor {
         }
         synchronized (this) {
             if (table == null) {
-                try {
-                    ClusterValue<Object> result = client.customCommand(new GlideString[]{GlideString.of("COMMAND")})
-                            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                    table = parseTable(asList(result.getSingleValue()));
-                    log.info("Loaded key specs for {} commands", table.size());
-                } catch (Exception e) {
-                    // Leave the table unset so the next call retries; GETKEYS covers us meanwhile.
-                    log.warn("Failed to load COMMAND table, falling back to COMMAND GETKEYS: {}", e.getMessage());
-                    return null;
-                }
+                load(client);
             }
             return table;
+        }
+    }
+
+    /**
+     * Loads the table again, unless that was done within {@link #RELOAD_INTERVAL_NANOS} (so a client
+     * sending unknown commands can't make every one cost a COMMAND round trip). Returns the table.
+     */
+    private synchronized Map<String, KeySpec> reloadIfStale(GlideClusterClient client) {
+        if (table == null || clock.getAsLong() - loadedAt >= RELOAD_INTERVAL_NANOS) {
+            load(client);
+        }
+        return table;
+    }
+
+    /** Fetches and installs the table; on failure keeps the old one (GETKEYS covers us meanwhile). */
+    private void load(GlideClusterClient client) {
+        loadedAt = clock.getAsLong();
+        try {
+            Map<String, KeySpec> loaded = loader.apply(client);
+            int before = table == null ? 0 : table.size();
+            table = loaded;
+            if (before != loaded.size()) {
+                log.info("Loaded key specs for {} commands", loaded.size());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load the COMMAND table, falling back to COMMAND GETKEYS: {}", e.getMessage());
+        }
+    }
+
+    private static Map<String, KeySpec> fetchTable(GlideClusterClient client) {
+        try {
+            ClusterValue<Object> result = client.customCommand(new GlideString[]{GlideString.of("COMMAND")})
+                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return parseTable(asList(result.getSingleValue()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted loading the COMMAND table", e);
+        } catch (Exception e) {
+            throw new IllegalStateException(e.getMessage(), e);
         }
     }
 
