@@ -53,6 +53,24 @@ public final class ServerErrors {
             Map.entry("ReadOnly", "READONLY"),
             Map.entry("NotBusy", "NOTBUSY"));
 
+    /**
+     * Error codes with which a cluster node rejects a command without running it, and which Glide
+     * retries for a single command (waiting, refreshing slots or following the redirect). Inside a
+     * batch Glide returns them, except MOVED/ASK when the redirect target is reachable.
+     */
+    private static final java.util.Set<String> REJECTED_UNRUN =
+            java.util.Set.of("TRYAGAIN", "CLUSTERDOWN", "MASTERDOWN", "LOADING", "READONLY", "MOVED", "ASK");
+
+    /**
+     * Whether {@code error} means the node rejected the command without running it, for a transient
+     * cluster reason, so sending it again is safe and may succeed.
+     */
+    public static boolean rejectedWithoutRunning(Reply.Error error) {
+        String message = error.message();
+        int space = message.indexOf(' ');
+        return REJECTED_UNRUN.contains(space < 0 ? message : message.substring(0, space));
+    }
+
     /** An error reply for {@code e}, unwrapping {@link ExecutionException}. */
     public static Reply error(Throwable e) {
         Throwable cause = e instanceof ExecutionException && e.getCause() != null ? e.getCause() : e;

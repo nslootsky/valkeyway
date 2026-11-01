@@ -161,3 +161,18 @@ Each phase ends green on the full suite and with a benchmark run.
 2. **Inline commands:** supported, with Valkey-style quote handling.
 3. **Same-slot reordering during resharding:** accepted and documented (same as cluster-aware clients such as Lettuce and Jedis). Phase 2 tests whether Glide actually reorders.
 4. **`PROXY` commands:** make them real. STATS and CLIENTINFO come from the connection registry; CONFIG only covers settings that take effect; FLUSHCLIENTS is removed. The registry also lets the proxy answer `CLIENT LIST` / `CLIENT KILL` with real clients.
+
+## Topology changes (2026-11-01)
+
+`TopologyChangeTest` runs live traffic against its own cluster (3 primaries with a replica each, plus a spare node) while the cluster changes shape, through all three backend paths: single commands, client pipelines, and single commands coalesced across connections. Note that a pipeline's first command is always sent alone, since the connection starts a unit as soon as a command arrives; only the commands queued behind it form a batch.
+
+| Change | Result |
+|---|---|
+| ASK during a migration | Followed on every path, also inside batches. |
+| TRYAGAIN (multi-key command, keys split mid-migration) | Glide retries it for single commands, but not inside batches (`retry_server_error` is off). Coalesced commands are now resent alone (below). Pipelines report it, matching a cluster-aware client's pipeline. |
+| MOVED inside a batch, slot moved to a new shard | Followed on every path, including to a node Glide had never connected to. |
+| Graceful failover (`CLUSTER FAILOVER`) under load | No errors; every acknowledged INCR applied exactly once. |
+| Primary killed | The proxy served the slot as soon as the replica was promoted. Writes during the outage fail. |
+| Primary hung (`DEBUG SLEEP`) | Not routed around until the node answers again. Request timeouts don't trigger a topology refresh, and the refresh a periodic check eventually starts queries every node, including the hung one, over a connection without a response timeout. A shorter periodic interval (5 s) didn't help. Upstream issue to file. |
+
+**Coalesced batches resend rejected commands.** Inside a batch Glide returns TRYAGAIN, CLUSTERDOWN, MASTERDOWN, LOADING and READONLY (and MOVED/ASK when it can't follow them), where it would retry a single command. Each command in a coalesced batch is the only one its connection has in flight, so `CatchAllCommand` resends those alone through the single-command path; that can't reorder anything a client can observe. Whole-batch failures (timeouts, connection loss) are not resent, since the commands may have run. Client pipelines keep the errors: resending one command would run it after the commands behind it, and a standalone server's pipeline reports errors per command too (Jedis, Lettuce and Glide's standalone batches don't retry error replies).

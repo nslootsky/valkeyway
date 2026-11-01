@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.reply;
 
+import io.github.nslootsky.valkeyway.protocol.Reply;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -43,5 +44,23 @@ class ServerErrorsTest {
     @Test
     void nullErrorMessageStillHasCode() {
         assertEquals("ERR Unknown error", ServerErrors.message(null));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "TRYAGAIN Multiple keys request during rehashing of slot | true",
+            "CLUSTERDOWN The cluster is down | true",
+            "MASTERDOWN Link with MASTER is down | true",
+            "LOADING Valkey is loading the dataset in memory | true",
+            "READONLY You can't write against a read only replica. | true",
+            "MOVED 3999 127.0.0.1:6381 | true",
+            "ASK 3999 127.0.0.1:6381 | true",
+            "ERR Request timed out | false",
+            "WRONGTYPE Operation against a key holding the wrong kind of value | false",
+            "ERR BrokenPipe: Cluster: Failed to receive command response | false",
+            "TRYAGAINX | false",
+    })
+    void recognisesErrorsRejectedWithoutRunning(String message, boolean expected) {
+        assertEquals(expected, ServerErrors.rejectedWithoutRunning(new Reply.Error(message)));
     }
 }

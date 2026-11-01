@@ -147,7 +147,14 @@ public class CatchAllCommand implements AsyncCommandHandler {
                     Reply reply = error != null ? ServerErrors.error(unwrap(error))
                             : results == null || i >= results.length ? Reply.error("ERR missing reply in batch")
                             : GlideReplies.toReply(Resp2Shapes.shape(p.args(), results[i]));
-                    complete(p, reply);
+                    if (error == null && reply instanceof Reply.Error e && ServerErrors.rejectedWithoutRunning(e)) {
+                        // Glide retries these for a single command but not inside a batch. Each command
+                        // here is the only one its connection has in flight, so resending it alone
+                        // can't reorder it against that connection's other commands.
+                        sendOne(client, p, loop);
+                    } else {
+                        complete(p, reply);
+                    }
                 }
                 return null;
             }, loop);
