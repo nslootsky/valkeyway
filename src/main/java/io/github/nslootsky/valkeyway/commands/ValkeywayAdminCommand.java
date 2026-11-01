@@ -150,6 +150,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
         c.put("blocking-pool.idle-timeout-seconds", Long.toString(props.blockingPool().idleTimeoutSeconds()));
         c.put("transactions.cross-slot", props.transactions().crossSlot().name().toLowerCase(Locale.ROOT));
         c.put("transactions.watch-pool.max-size", Integer.toString(props.transactions().watchPool().maxSize()));
+        c.put("node-admin-commands", props.nodeAdminCommands().name().toLowerCase(Locale.ROOT));
         return c;
     }
 

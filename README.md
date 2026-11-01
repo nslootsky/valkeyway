@@ -124,6 +124,7 @@ proxy:
       max-size: 64              # Connections with keys watched at once; more wait
       idle-timeout-seconds: 60  # Close a pooled client after this long unused
       acquire-timeout-ms: 2000  # How long WATCH waits for a free client before failing
+  node-admin-commands: reject   # SHUTDOWN, REPLICAOF, CONFIG SET, ...: reject, or forward (to whichever node Glide picks)
   clients:
     max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
     timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)
@@ -251,6 +252,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - PING, ECHO, TIME, QUIT (answered by the proxy)
 - CLIENT (ID, INFO, LIST, KILL, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), RESET, AUTH, READONLY/READWRITE: answered by the proxy from its own connections. Forwarded, they would act on backend connections that every client shares.
 - PROXY: STATS, CLIENTINFO <id>, CONFIG GET <name|*>, CLUSTER INFO, HELP
+- Commands that administer a single node are refused by default (`proxy.node-admin-commands`), since through the proxy they reach whichever node Glide picks: SHUTDOWN, REPLICAOF/SLAVEOF, FAILOVER, DEBUG, SAVE, BGSAVE, BGREWRITEAOF, SYNC/PSYNC/REPLCONF, MODULE, CONFIG SET/REWRITE/RESETSTAT, ACL SETUSER/DELUSER/LOAD/SAVE, and the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, ...). Their read-only counterparts (CONFIG GET, ACL WHOAMI, CLUSTER KEYSLOT, ...) work.
 - Blocking commands (BLPOP, BRPOP, BLMOVE, BZPOPMIN, XREAD/XREADGROUP BLOCK, WAIT, ...) run on dedicated backend clients
 
 ### All other commands (via customCommand)

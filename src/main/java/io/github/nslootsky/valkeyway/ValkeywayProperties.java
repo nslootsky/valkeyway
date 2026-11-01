@@ -22,7 +22,8 @@ public record ValkeywayProperties(
     BlockingPool blockingPool,
     Clients clients,
     Glide glide,
-    Transactions transactions
+    Transactions transactions,
+    NodeAdmin nodeAdminCommands
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
@@ -33,6 +34,7 @@ public record ValkeywayProperties(
         if (clients == null) clients = new Clients(0, 0, 0);
         if (glide == null) glide = new Glide(0, null, null, 0);
         if (transactions == null) transactions = new Transactions(null, null);
+        if (nodeAdminCommands == null) nodeAdminCommands = NodeAdmin.REJECT;
     }
 
     /**
@@ -128,4 +130,11 @@ public record ValkeywayProperties(
             if (acquireTimeoutMs <= 0) acquireTimeoutMs = 2000;
         }
     }
+
+    /**
+     * {@code proxy.node-admin-commands}: commands that administer a single node (SHUTDOWN, REPLICAOF,
+     * FAILOVER, DEBUG, SAVE, CONFIG SET, ACL SETUSER, CLUSTER MEET, ...). Through the proxy they reach
+     * whichever node Glide picks. {@code reject} (default) refuses them; {@code forward} sends them on.
+     */
+    public enum NodeAdmin { REJECT, FORWARD }
 }

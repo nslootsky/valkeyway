@@ -173,4 +173,26 @@ class ConnectionCommandsTest extends IntegrationTestBase {
             assertTrue(((String) a.call("PROXY", "CLUSTER", "INFO")).contains("cluster_state:ok"));
         }
     }
+
+    /** Node administration through the proxy would hit whichever node Glide picks; it's refused. */
+    @Test
+    void nodeAdminCommandsAreRefused() throws Exception {
+        try (RawRespClient c = connect()) {
+            for (String[] cmd : List.of(new String[]{"SHUTDOWN", "NOSAVE"}, new String[]{"CONFIG", "SET", "maxmemory", "1"},
+                    new String[]{"CLUSTER", "MEET", "127.0.0.1", "1"}, new String[]{"DEBUG", "SLEEP", "1"},
+                    new String[]{"BGSAVE"})) {
+                Object reply = c.call(cmd);
+                assertTrue(reply instanceof Error(String m) && m.contains("administers a single node"),
+                        String.join(" ", cmd) + " -> " + reply);
+            }
+            assertEquals(OK, c.call("SET", "conn:admin", "still-up"), "every node is still there");
+            assertInstanceOf(List.class, c.call("CONFIG", "GET", "maxmemory"), "read-only variants pass");
+            assertInstanceOf(Long.class, c.call("CLUSTER", "KEYSLOT", "k"));
+
+            c.call("MULTI");
+            Object queued = c.call("SAVE");
+            assertTrue(queued instanceof Error(String m) && m.contains("administers a single node"), "in MULTI: " + queued);
+            assertEquals(new Error("EXECABORT Transaction discarded because of previous errors."), c.call("EXEC"));
+        }
+    }
 }

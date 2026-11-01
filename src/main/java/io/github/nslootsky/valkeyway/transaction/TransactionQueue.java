@@ -9,6 +9,7 @@ import glide.api.GlideClusterClient;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.backend.routing.ClusterSlots;
 import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor;
+import io.github.nslootsky.valkeyway.backend.routing.NodeAdminCommands;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.Connection;
 
@@ -23,10 +24,12 @@ public final class TransactionQueue {
 
     private final BackendClients clients;
     private final CommandKeyExtractor keys;
+    private final NodeAdminCommands nodeAdmin;
 
-    public TransactionQueue(BackendClients clients, CommandKeyExtractor keys) {
+    public TransactionQueue(BackendClients clients, CommandKeyExtractor keys, NodeAdminCommands nodeAdmin) {
         this.clients = clients;
         this.keys = keys;
+        this.nodeAdmin = nodeAdmin;
     }
 
     /**
@@ -34,6 +37,10 @@ public final class TransactionQueue {
      * not allowed in a transaction) is answered with its error now, and makes EXEC fail with EXECABORT.
      */
     public Reply queue(Connection connection, byte[][] args) {
+        String refused = nodeAdmin.check(args);
+        if (refused != null) {
+            return reject(connection, refused);
+        }
         GlideClusterClient client = clients.getClient(connection.db());
         String error = keys.queueError(client, args);
         if (error != null) {

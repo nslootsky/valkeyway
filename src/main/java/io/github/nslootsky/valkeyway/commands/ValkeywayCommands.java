@@ -12,6 +12,7 @@ import io.github.nslootsky.valkeyway.backend.Backend;
 import io.github.nslootsky.valkeyway.backend.Coalescer;
 import io.github.nslootsky.valkeyway.blocking.BlockingCommandRunner;
 import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor;
+import io.github.nslootsky.valkeyway.backend.routing.NodeAdminCommands;
 import io.github.nslootsky.valkeyway.transaction.TransactionQueue;
 import io.github.nslootsky.valkeyway.transaction.WatchClientPool;
 import io.github.nslootsky.valkeyway.transaction.WatchSessions;
@@ -36,10 +37,11 @@ public final class ValkeywayCommands {
         keys.preloadInBackground(() -> backendClients.getClient(0));
         Backend backend = new Backend(keys);
         WatchSessions watches = new WatchSessions(watchPool);
+        NodeAdminCommands nodeAdmin = new NodeAdminCommands(props.nodeAdminCommands() == ValkeywayProperties.NodeAdmin.REJECT);
         CatchAllCommand catchAll = new CatchAllCommand(backendClients, backend, keys,
                 props.glide().coalesceRequests() ? new Coalescer(backendClients, backend) : null,
                 new BlockingCommandRunner(blockingPool, backend),
-                new TransactionQueue(backendClients, keys));
+                new TransactionQueue(backendClients, keys, nodeAdmin), nodeAdmin);
         ClientCommand client = new ClientCommand(watches);
         String noPubSub = " (Pub/Sub isn't supported yet)";
         CommandTable table = new CommandTable(catchAll)
@@ -65,7 +67,7 @@ public final class ValkeywayCommands {
                 .register("proxy", new ValkeywayAdminCommand(backendClients, metrics, client, props))
                 .register("hello", new HelloCommand())
                 .register("info", new InfoCommand(metrics))
-                .register("cluster", new ClusterCommand(backendClients, backend))
+                .register("cluster", new ClusterCommand(backendClients, backend, nodeAdmin))
                 .register("client", client)
                 .register("command", new CommandCommand(backendClients))
                 // Connection-scoped commands: answered here, never sent over the shared backend connections.

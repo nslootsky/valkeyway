@@ -13,6 +13,7 @@ import io.github.nslootsky.valkeyway.blocking.BlockingCommands;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor;
 import io.github.nslootsky.valkeyway.backend.routing.MapReplyCommands;
+import io.github.nslootsky.valkeyway.backend.routing.NodeAdminCommands;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.AsyncCommandHandler;
 import io.github.nslootsky.valkeyway.server.Connection;
@@ -48,12 +49,14 @@ public class CatchAllCommand implements AsyncCommandHandler {
     private final Coalescer coalescer;
     private final BlockingCommandRunner blocking;
     private final TransactionQueue transactions;
+    private final NodeAdminCommands nodeAdmin;
 
     /**
      * @param coalescer {@code null} to send every single command on its own
      */
     public CatchAllCommand(BackendClients clients, Backend backend, CommandKeyExtractor keys, Coalescer coalescer,
-                           BlockingCommandRunner blocking, TransactionQueue transactions) {
+                           BlockingCommandRunner blocking, TransactionQueue transactions, NodeAdminCommands nodeAdmin) {
+        this.nodeAdmin = nodeAdmin;
         this.clients = clients;
         this.backend = backend;
         this.keys = keys;
@@ -76,7 +79,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
     public boolean canRunAsync(Request request) {
         Connection connection = request.connection();
         byte[][] args = request.args();
-        if (connection.inTransaction() || BlockingCommands.detect(args).isPresent()) {
+        if (connection.inTransaction() || BlockingCommands.detect(args).isPresent() || nodeAdmin.check(args) != null) {
             return false;
         }
         if (clients.getIfPresent(connection.db()) == null) {
@@ -118,6 +121,10 @@ public class CatchAllCommand implements AsyncCommandHandler {
         byte[][] args = request.args();
         if (connection.inTransaction()) {
             return transactions.queue(connection, args);
+        }
+        String refused = nodeAdmin.check(args);
+        if (refused != null) {
+            return Reply.error(refused);
         }
         Optional<BlockingCommands.Spec> spec = BlockingCommands.detect(args);
         if (spec.isPresent()) {
