@@ -21,8 +21,9 @@ public final class ValkeywayCommands {
     private ValkeywayCommands() {}
 
     public static CommandTable create(GlideClientCache glideClientCache, ScanCursorStore scanCursorStore,
-                                      MetricsCollector metrics, BlockingClientPool blockingPool) {
-        CatchAllCommand catchAll = new CatchAllCommand(glideClientCache, metrics, blockingPool);
+                                      MetricsCollector metrics, BlockingClientPool blockingPool,
+                                      boolean coalesceRequests) {
+        CatchAllCommand catchAll = new CatchAllCommand(glideClientCache, metrics, blockingPool, coalesceRequests);
         catchAll.warmUp();
         return new CommandTable(catchAll)
                 .register("ping", new PingCommand())

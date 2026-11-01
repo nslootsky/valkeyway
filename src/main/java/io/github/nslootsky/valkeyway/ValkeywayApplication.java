@@ -44,7 +44,8 @@ public class ValkeywayApplication {
         RespServer server = new RespServer(
                 new RespServer.Settings(props.host(), props.port(), clients.ioThreads(), clients.maxClients(),
                         clients.timeoutSeconds()),
-                ValkeywayCommands.create(glideClientCache, scanCursorStore, metrics, blockingPool));
+                ValkeywayCommands.create(glideClientCache, scanCursorStore, metrics, blockingPool,
+                        props.glide().coalesceRequests()));
         server.start();
         log.info("Proxy ready");
         return server;
