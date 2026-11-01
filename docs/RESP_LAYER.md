@@ -148,6 +148,12 @@ Each phase ends green on the full suite and with a benchmark run.
 - `bench-throughput.sh`: c=1 p50 within ~2× of direct; c=50+ well past the 150k plateau and scaling with pipelining. If one Glide client becomes the limit, try spreading connections across several Glide clients per DB.
 - No regressions in the 67 integration tests; new wire-level tests (`RawRespClient`) for pipelining order, barriers, RESP3 and backpressure.
 
+## Findings since the proposal (2026-10-31)
+
+- **Glide reply integrity.** Unrouted `customCommand` misreads top-level map replies as multi-node results (order lost, binary keys corrupted; valkey-glide #4963), and Glide reshapes some replies by command name. Fixed in `0224d36` (explicit `SlotIdRoute` for map-reply commands) and `e5acdb3` (`Resp2Shapes`). The new encoder must keep both, and `DifferentialRepliesTest` is the check that it does.
+- **Glide's routed call path costs ~1.5 µs more CPU per request** (our own slot lookup is ~50 ns). Routing every command cost 4–6% throughput, so only map-reply commands are routed.
+- **The ~150k rps plateau may be partly Glide, not just our blocked event loops.** At the plateau the proxy used only ~3 of 24 cores (~24 µs of CPU per request), and extra Glide-side work lowered throughput more than its CPU cost explains, which suggests a serialization point per Glide client. Phase 2 should first measure throughput against the number of Glide clients per DB, before attributing all of the gain to async pipelining.
+
 ## Decisions (2026-10-31)
 
 1. **Blocking pool:** when full, a blocking command waits for a free client, still honoring its own timeout. Configurable cap (default 64); log a warning and expose a metric when the pool is full. Pooled entries start as full `GlideClusterClient`s; per-node entries (one connection instead of one per primary) can come later if connection count becomes a problem.

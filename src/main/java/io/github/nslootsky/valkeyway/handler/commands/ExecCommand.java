@@ -14,6 +14,7 @@ import glide.api.models.ClusterBatch;
 import glide.api.models.GlideString;
 import io.github.nslootsky.valkeyway.cache.GlideClientCache;
 import io.github.nslootsky.valkeyway.handler.SessionState;
+import io.github.nslootsky.valkeyway.reply.Resp2Shapes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,6 +79,9 @@ public class ExecCommand implements RespCommand {
                 return RedisToken.nullString();
             }
             log.debug("EXEC OK results={}", results.length);
+            for (int i = 0; i < results.length && i < buffered.size(); i++) {
+                results[i] = Resp2Shapes.shape(buffered.get(i), results[i]);
+            }
             return TokenUtils.toRedisArray(results);
         } catch (Exception e) {
             log.error("EXEC ERR {}", e.getMessage());

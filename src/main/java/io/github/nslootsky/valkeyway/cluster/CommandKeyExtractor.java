@@ -37,25 +37,70 @@ public class CommandKeyExtractor {
 
     private volatile Map<String, KeySpec> table;
 
+    public CommandKeyExtractor() {}
+
+    /** For tests: use a fixed command table instead of loading it from the cluster. */
+    CommandKeyExtractor(Map<String, KeySpec> table) {
+        this.table = table;
+    }
+
+    /** Returned by {@link #singleSlot} when a command has no keys, or keys in more than one slot. */
+    public static final int NO_SLOT = -1;
+
     /**
-     * Returns the key arguments of {@code args} (args[0] is the command name).
+     * Returns the key arguments of {@code args} (args[0] is the command name), asking the server
+     * with COMMAND GETKEYS when they can't be found locally.
      */
     public List<byte[]> extractKeys(GlideClusterClient client, byte[][] args) {
         if (args.length < 2) {
             return List.of();
         }
+        List<byte[]> keys = localKeys(client, args);
+        return keys != null ? keys : getKeysFromServer(client, args);
+    }
+
+    /**
+     * Returns the hash slot shared by all keys of {@code args}, or {@link #NO_SLOT} if the command
+     * has no keys, its keys span slots, or they can't be determined without a round trip.
+     */
+    public int singleSlot(GlideClusterClient client, byte[][] args) {
+        if (args.length < 2) {
+            return NO_SLOT;
+        }
+        List<byte[]> keys = localKeys(client, args);
+        if (keys == null || keys.isEmpty()) {
+            return NO_SLOT;
+        }
+        int slot = ClusterSlots.slot(keys.getFirst());
+        for (int i = 1; i < keys.size(); i++) {
+            if (ClusterSlots.slot(keys.get(i)) != slot) {
+                return NO_SLOT;
+            }
+        }
+        return slot;
+    }
+
+    /**
+     * Keys found from the command table or local parsing only, never a round trip.
+     * Returns {@code null} when unknown.
+     */
+    private List<byte[]> localKeys(GlideClusterClient client, byte[][] args) {
         Map<String, KeySpec> specs = loadTable(client);
-        KeySpec spec = specs == null ? null : specs.get(lower(args[0]));
-        if (spec != null && !spec.subcommands().isEmpty()) {
-            KeySpec sub = spec.subcommands().get(lower(args[0]) + "|" + lower(args[1]));
+        if (specs == null) {
+            return null;
+        }
+        String name = lower(args[0]);
+        KeySpec spec = specs.get(name);
+        if (spec == null) {
+            return null;
+        }
+        if (!spec.subcommands().isEmpty()) {
+            KeySpec sub = spec.subcommands().get(name + "|" + lower(args[1]));
             if (sub != null) {
                 spec = sub;
             }
         }
-        if (spec == null || spec.movable()) {
-            return getKeysFromServer(client, args);
-        }
-        return keysFromSpec(spec, args);
+        return spec.movable() ? MovableKeys.parse(name, args) : keysFromSpec(spec, args);
     }
 
     static List<byte[]> keysFromSpec(KeySpec spec, byte[][] args) {

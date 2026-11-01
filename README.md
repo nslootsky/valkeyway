@@ -225,6 +225,7 @@ Spring Boot Actuator endpoints are exposed on a separate management port (defaul
 - Transactions spanning slots use per-slot atomicity, not global atomicity
 - EVAL/EVALSHA scripts with keys on multiple nodes will fail with CROSSSLOT error
 - Blocking commands (BLPOP, BRPOP, XREAD with BLOCK, WAIT, etc.) run on a pool of dedicated backend clients (`proxy.blocking-pool`), so they don't hold up other clients' commands to the same node. While blocked they still occupy one of the proxy's network threads, which can delay other clients sharing that thread
-- Stream replies (XRANGE, XREAD, ...) are not yet shaped exactly like a standalone server's RESP2 replies
+- Integer replies above 2^31 are truncated, and a WATCH-aborted EXEC returns a null bulk string instead of a null array (limits of the resp-server library). This also affects `GEOSEARCH ... WITHHASH`
+- Set replies (SMEMBERS, SINTER, ...) contain the right members but not necessarily in the server's iteration order
 - Pub/Sub commands (SUBSCRIBE, PSUBSCRIBE) are not supported
 - No TLS support
