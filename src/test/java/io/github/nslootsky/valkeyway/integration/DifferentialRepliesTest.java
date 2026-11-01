@@ -129,6 +129,8 @@ class DifferentialRepliesTest extends IntegrationTestBase {
                 // Pair-shaped replies
                 of("BZPOPMIN with data", zsetOf(3), "BZPOPMIN", "%z", "1"),
                 of("LMPOP", List.<String[]>of(c("DEL", "%l"), c("RPUSH", "%l", "a", "b", "c")), "LMPOP", "1", "%l", "LEFT", "COUNT", "2"),
+                of("LMPOP binary key name", List.<String[]>of(c("DEL", "%lÿ\u0080"), c("RPUSH", "%lÿ\u0080", "a", "b")),
+                        "LMPOP", "1", "%lÿ\u0080", "LEFT", "COUNT", "2"),
                 of("BLMPOP with data", List.<String[]>of(c("DEL", "%l"), c("RPUSH", "%l", "a", "b", "c")),
                         "BLMPOP", "1", "1", "%l", "RIGHT", "COUNT", "2"),
 
@@ -270,6 +272,40 @@ class DifferentialRepliesTest extends IntegrationTestBase {
         assertEquals(expected, actual, testCase.name());
     }
 
+    /** The same cases with both connections speaking RESP3 (HELLO 3). */
+    @ParameterizedTest(name = "RESP3: {0}")
+    @MethodSource("cases")
+    void resp3ProxyReplyMatchesServer(Case testCase) throws Exception {
+        int id = SEQ.incrementAndGet();
+        String directPrefix = "{diff:" + id + ":d}";
+        String proxyPrefix = "{diff:" + id + ":p}";
+
+        String[] owner = nodes().ownerOf(directPrefix).split(":");
+        Object expected;
+        try (RawRespClient node = new RawRespClient(owner[0], Integer.parseInt(owner[1]))) {
+            node.call("HELLO", "3");
+            for (String[] cmd : testCase.setup()) {
+                node.call(withPrefix(cmd, directPrefix));
+            }
+            expected = node.call(withPrefix(testCase.command(), directPrefix));
+        }
+
+        Object actual;
+        try (RawRespClient proxy = new RawRespClient("127.0.0.1", RESP_PORT)) {
+            proxy.call("HELLO", "3");
+            for (String[] cmd : testCase.setup()) {
+                proxy.call(withPrefix(cmd, proxyPrefix));
+            }
+            actual = rename(proxy.call(withPrefix(testCase.command(), proxyPrefix)), proxyPrefix, directPrefix);
+        }
+
+        if (testCase.unordered()) {
+            expected = sorted(expected);
+            actual = sorted(actual);
+        }
+        assertEquals(expected, actual, testCase.name());
+    }
+
     private static String[] withPrefix(String[] cmd, String prefix) {
         return Arrays.stream(cmd).map(a -> a.replace("%", prefix)).toArray(String[]::new);
     }
@@ -278,12 +314,24 @@ class DifferentialRepliesTest extends IntegrationTestBase {
         return switch (reply) {
             case String s -> s.replace(from, to);
             case List<?> list -> list.stream().map(v -> rename(v, from, to)).toList();
+            case RawRespClient.RMap(List<Object> kv) -> new RawRespClient.RMap(renameAll(kv, from, to));
+            case RawRespClient.RSet(List<Object> items) -> new RawRespClient.RSet(renameAll(items, from, to));
+            case RawRespClient.Push(List<Object> items) -> new RawRespClient.Push(renameAll(items, from, to));
+            case RawRespClient.Verbatim(String format, String text) -> new RawRespClient.Verbatim(format, text.replace(from, to));
             case null, default -> reply;
         };
     }
 
     @SuppressWarnings("unchecked")
+    private static List<Object> renameAll(List<Object> items, String from, String to) {
+        return (List<Object>) rename(items, from, to);
+    }
+
+    @SuppressWarnings("unchecked")
     private static Object sorted(Object reply) {
+        if (reply instanceof RawRespClient.RSet(List<Object> items)) {
+            return new RawRespClient.RSet((List<Object>) sorted(items));
+        }
         if (reply instanceof List<?> list) {
             List<Object> copy = new ArrayList<>((List<Object>) list);
             copy.sort(Comparator.comparing(String::valueOf));

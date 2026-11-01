@@ -14,9 +14,9 @@ import io.github.nslootsky.valkeyway.server.Users;
 import java.util.List;
 
 /**
- * {@code HELLO [protover [AUTH username password] [SETNAME clientname]]}: answers like a standalone
- * server speaking RESP2, without contacting the cluster. AUTH authenticates against the proxy's
- * users, as the AUTH command does.
+ * {@code HELLO [protover [AUTH username password] [SETNAME clientname]]}: switches the connection to
+ * RESP2 or RESP3 and answers like a standalone server, without contacting the cluster. AUTH
+ * authenticates against the proxy's users, as the AUTH command does.
  */
 // [upstream:V7]
 public class HelloCommand implements InlineCommandHandler {
@@ -41,8 +41,8 @@ public class HelloCommand implements InlineCommandHandler {
     public Reply execute(Request request) {
         Connection connection = request.connection();
         int argc = request.argCount();
+        long version = connection.protocol();
         if (argc >= 1) {
-            long version;
             try {
                 version = Long.parseLong(request.argString(0));
             } catch (NumberFormatException e) {
@@ -86,10 +86,11 @@ public class HelloCommand implements InlineCommandHandler {
                 return setName;
             }
         }
+        connection.protocol((int) version);
         return new Reply.MapReply(List.of(
                 Reply.bulk("server"), Reply.bulk("valkeyway"),
                 Reply.bulk("version"), Reply.bulk("0.1.0"),
-                Reply.bulk("proto"), Reply.integer(2),
+                Reply.bulk("proto"), Reply.integer(version),
                 Reply.bulk("id"), Reply.integer(connection.id()),
                 Reply.bulk("mode"), Reply.bulk("standalone"),
                 Reply.bulk("role"), Reply.bulk("master"),

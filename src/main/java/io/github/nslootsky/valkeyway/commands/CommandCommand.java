@@ -50,6 +50,10 @@ public class CommandCommand implements CommandHandler {
             if (request.argCount() >= 1 && request.argString(0).equalsIgnoreCase("DOCS")) {
                 return toReplyForDocs(result.hasSingleData() ? result.getSingleValue() : result.getMultiValue());
             }
+            if ((request.argCount() == 0 || request.argString(0).equalsIgnoreCase("INFO"))
+                    && result.hasSingleData() && result.getSingleValue() instanceof Object[] entries) {
+                return commandEntries(entries);
+            }
             return GlideReplies.toReply(result);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -57,6 +61,69 @@ public class CommandCommand implements CommandHandler {
         } catch (Exception e) {
             return ServerErrors.error(e);
         }
+    }
+
+    /**
+     * COMMAND / COMMAND INFO entries: [name, arity, flags, first, last, step, categories, tips,
+     * key specs, subcommands]. Flags, ACL categories and key-spec flags are statuses on the wire,
+     * which Glide returns like bulk strings. [upstream:G7]
+     */
+    private static Reply commandEntries(Object[] entries) {
+        List<Reply> out = new ArrayList<>(entries.length);
+        for (Object entry : entries) {
+            out.add(entry instanceof Object[] fields && fields.length >= 10 ? commandEntry(fields) : GlideReplies.toReply(entry));
+        }
+        return new Reply.Array(out);
+    }
+
+    private static Reply commandEntry(Object[] fields) {
+        List<Reply> out = new ArrayList<>(fields.length);
+        for (int i = 0; i < fields.length; i++) {
+            out.add(switch (i) {
+                case 2, 6 -> statuses(fields[i]);
+                case 8 -> keySpecs(fields[i]);
+                case 9 -> fields[i] instanceof Object[] subcommands ? commandEntries(subcommands) : GlideReplies.toReply(fields[i]);
+                default -> GlideReplies.element(fields[i]);
+            });
+        }
+        return new Reply.Array(out);
+    }
+
+    /** A set (array in RESP2) of statuses. */
+    private static Reply statuses(Object value) {
+        if (!(value instanceof Collection<?> || value instanceof Object[])) {
+            return GlideReplies.element(value);
+        }
+        Object[] items = value instanceof Collection<?> c ? c.toArray() : (Object[]) value;
+        List<Reply> out = new ArrayList<>(items.length);
+        for (Object item : items) {
+            out.add(new Reply.Simple(item instanceof GlideString gs ? gs.getString() : String.valueOf(item)));
+        }
+        return value instanceof Set<?> ? new Reply.SetReply(out) : new Reply.Array(out);
+    }
+
+    /** Key specs (a set in RESP3): maps whose "flags" value is a set of statuses. */
+    private static Reply keySpecs(Object value) {
+        Object[] specs = value instanceof Collection<?> c ? c.toArray() : value instanceof Object[] a ? a : null;
+        if (specs == null) {
+            return GlideReplies.element(value);
+        }
+        List<Reply> out = new ArrayList<>(specs.length);
+        for (Object spec : specs) {
+            if (spec instanceof Map<?, ?> map) {
+                List<Reply> kv = new ArrayList<>(map.size() * 2);
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    Object key = e.getKey();
+                    String name = key instanceof GlideString gs ? gs.getString() : String.valueOf(key);
+                    kv.add(GlideReplies.element(key));
+                    kv.add(name.equals("flags") ? statuses(e.getValue()) : GlideReplies.element(e.getValue()));
+                }
+                out.add(new Reply.MapReply(kv));
+            } else {
+                out.add(GlideReplies.element(spec));
+            }
+        }
+        return value instanceof Set<?> ? new Reply.SetReply(out) : new Reply.Array(out);
     }
 
     Reply toReplyForDocs(Object value) {
@@ -71,6 +138,8 @@ public class CommandCommand implements CommandHandler {
                 }
                 yield new Reply.Array(items);
             }
+            // History is a set in RESP3, which Glide returns as an unordered Java set.
+            case Set<?> set -> new Reply.SetReply(((Reply.Array) toReplyForDocs(set.toArray())).items());
             case Collection<?> list -> toReplyForDocs(list.toArray());
             case Map<?, ?> map -> {
                 List<Reply> items = new ArrayList<>(map.size() * 2);

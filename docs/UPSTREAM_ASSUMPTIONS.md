@@ -81,7 +81,7 @@ Without a route, `ClusterValue.of()` treats any reply whose top level is a map a
 
 Glide talks RESP3 to the cluster and converts some replies according to the command name (`glide-core/src/client/value_conversion.rs`, `expected_type_for_cmd`). Examples: stream entries become maps of id to fields, geo results are nested and parsed as doubles, and WITHSCORES results become maps or arrays of pairs. Some RESP3 replies also differ from RESP2 on their own. We map each of these back to the RESP2 shape a standalone server sends. The list of commands whose reply can be a top-level map (needed for G5) comes from the same function.
 
-- **Code:** `Resp2Shapes.shape`, `MapReplyCommands.NAMES`.
+- **Code:** `ReplyShapes.shape`, `MapReplyCommands.NAMES`.
 - **Live test:** `DifferentialRepliesTest`. If Glide reshapes a new command, that command's case fails. A command not listed there is not covered, so add a case for any new reply type.
 
 ### G7: Which Java types Glide returns for a reply
@@ -94,10 +94,12 @@ With binary output (`withBinaryOutput`, and `GlideString` arguments to `customCo
 - **Strings nested inside a reply** were bulk strings on the wire.
 - **Both RESP2 nulls** (`$-1` and `*-1`) arrive as Java `null` (see V2).
 - **A failed command inside a batch or EXEC** arrives as a `Throwable` element.
-- **COMMAND DOCS argument flags** arrive as strings. Valkey sends them as statuses, and redis-cli asserts that they are (`cliAddCommandDocArg`).
+- **COMMAND DOCS argument flags** arrive as strings. Valkey sends them as statuses, and redis-cli asserts that they are (`cliAddCommandDocArg`). Likewise COMMAND INFO's flags, ACL categories and key-spec flags.
+- **Booleans** come from Glide's per-command conversions (SMISMEMBER, ...) of integer replies; Valkey sends integers, in RESP3 too.
+- **RESP3 sets** arrive as unordered Java sets, so the server's order is lost (SMEMBERS, and the sets inside COMMAND INFO and COMMAND DOCS).
 
-- **Code:** `GlideReplies` (`simpleOrText`, `nested`), `Resp2Shapes.STATUS_COMMANDS`, `CommandCommand.DOC_FLAG_VALUES`.
-- **Live test:** `DifferentialRepliesTest` (TYPE is a status reply, SET is +OK, null cases, EXEC with reshaped replies), `RespFidelityTest.verbatimTextRepliesAreBulkStrings`, `RespFidelityTest.commandDocsFlagsAreStatuses`.
+- **Code:** `GlideReplies` (`simpleOrText`, `nested`), `ReplyShapes.STATUS_COMMANDS`, `CommandCommand.DOC_FLAG_VALUES` and `commandEntries`.
+- **Live test:** `DifferentialRepliesTest` (TYPE is a status reply, SET is +OK, null cases, EXEC with reshaped replies, SMISMEMBER), `RespFidelityTest.verbatimTextRepliesAreBulkStrings`, `RespFidelityTest.commandDocsFlagsAreStatuses` and `commandInfoFlagsAreStatuses`, `Resp3Test.commandDocsMatchAServers`.
 
 ### G8: Topology refresh behavior
 
@@ -165,7 +167,7 @@ Glide 2.5.3 can connect over TLS (`useTLS`), with custom root certificates or wi
 
 Glide hands us these as parsed doubles (G6), so we have to format them again.
 
-- **Code:** `DoubleFormat`, `Resp2Shapes` (`distance`, `coordinate`).
+- **Code:** `DoubleFormat`, `ReplyShapes` (`distance`, `coordinate`).
 - **Live test:** `DifferentialRepliesTest` (ZSCORE, ZINCRBY, GEODIST, GEOPOS, GEOSEARCH WITH*), `RespFidelityTest`.
 
 ### V2: Which commands answer "nothing" with a null array
@@ -180,7 +182,7 @@ RESP2 has two nulls, and Glide returns both as Java `null` (G7). Valkey sends `*
 
 Everything else gets `$-1`. These come from the `addReplyNullArray` call sites.
 
-- **Code:** `Resp2Shapes.NULL_ARRAY_COMMANDS` and `nullReply`, `ExecCommand`.
+- **Code:** `ReplyShapes.NULL_ARRAY_COMMANDS` and `nullReply`, `ExecCommand`.
 - **Live test:** `DifferentialRepliesTest` (null cases), `RespFidelityTest` (aborted EXEC), `BlockingCommandsTest` (timeouts).
 
 ### V3: CLUSTER NODES line format

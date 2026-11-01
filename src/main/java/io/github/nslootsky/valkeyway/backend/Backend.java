@@ -13,7 +13,7 @@ import io.github.nslootsky.valkeyway.backend.routing.MapReplyCommands;
 import io.github.nslootsky.valkeyway.backend.routing.SlotRoutes;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.backend.replies.GlideReplies;
-import io.github.nslootsky.valkeyway.backend.replies.Resp2Shapes;
+import io.github.nslootsky.valkeyway.backend.replies.ReplyShapes;
 import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
 
 import java.util.ArrayList;
@@ -102,7 +102,7 @@ public final class Backend {
 
     /** The reply to {@code args} from one value: a single-node result, or one element of a batch result. */
     public static Reply toReply(byte[][] args, Object value) {
-        return GlideReplies.toReply(Resp2Shapes.shape(args, value));
+        return GlideReplies.toReply(ReplyShapes.shape(args, value));
     }
 
     private CompletableFuture<ClusterValue<Object>> sendOnce(GlideClusterClient client, byte[][] args) {

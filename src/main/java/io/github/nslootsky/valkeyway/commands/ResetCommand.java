@@ -16,7 +16,7 @@ import io.github.nslootsky.valkeyway.transaction.WatchSessions;
 /**
  * RESET, applied to the proxy's view of the connection: leaves MULTI, drops watches, selects
  * database 0, clears the name and the CLIENT REPLY and NO-EVICT/NO-TOUCH settings, and switches to
- * the default user (unauthenticated, if that user has a password).
+ * the default user (unauthenticated, if that user has a password), and back to RESP2.
  *
  * <p>Forwarding it would reset a backend connection shared by every client: on a database-1
  * connection that switched everyone's reads and writes to database 0.
@@ -57,6 +57,7 @@ public class ResetCommand implements CommandHandler {
         connection.noEvict(false);
         connection.noTouch(false);
         connection.replyMode(Connection.ReplyMode.ON);
+        connection.protocol(2);
         connection.user(users.authRequired() ? null : Users.DEFAULT);
         return new Reply.Simple("RESET");
     }

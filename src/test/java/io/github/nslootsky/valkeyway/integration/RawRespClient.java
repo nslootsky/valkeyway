@@ -24,7 +24,8 @@ import java.util.List;
  *
  * <p>Replies map to: {@code +status} → {@link Status}, {@code -error} → {@link Error},
  * {@code :n} → {@link Long}, {@code $bulk} → {@link String}, {@code *array} → {@link List},
- * null bulk ({@code $-1}) → {@code null}, null array ({@code *-1}) → {@link #NULL_ARRAY}.
+ * null bulk ({@code $-1}) → {@code null}, null array ({@code *-1}) → {@link #NULL_ARRAY}; RESP3 types
+ * to the records below, {@code #} to {@link Boolean} and {@code _} to {@link #NULL}.
  */
 public class RawRespClient implements AutoCloseable {
 
@@ -32,10 +33,31 @@ public class RawRespClient implements AutoCloseable {
 
     public record Error(String message) {}
 
-    /** The RESP2 null array, {@code *-1}, as distinct from the null bulk string. */
-    public enum Nil { ARRAY }
+    /** The RESP2 null array, {@code *-1}, as distinct from the null bulk string; and RESP3's null, {@code _}. */
+    public enum Nil { ARRAY, RESP3 }
 
     public static final Nil NULL_ARRAY = Nil.ARRAY;
+    public static final Nil NULL = Nil.RESP3;
+
+    // RESP3 types.
+
+    /** {@code %}: alternating keys and values, in the order received. */
+    public record RMap(List<Object> keysAndValues) {}
+
+    /** {@code ~}. */
+    public record RSet(List<Object> items) {}
+
+    /** {@code ,}: the text as sent. */
+    public record RDouble(String text) {}
+
+    /** {@code (}. */
+    public record BigNumber(String digits) {}
+
+    /** {@code =}: format (e.g. "txt") and text. */
+    public record Verbatim(String format, String text) {}
+
+    /** {@code >}. */
+    public record Push(List<Object> items) {}
 
     private final Socket socket;
     private final OutputStream out;
@@ -113,14 +135,35 @@ public class RawRespClient implements AutoCloseable {
                 if (len < 0) {
                     yield NULL_ARRAY;
                 }
-                List<Object> items = new ArrayList<>();
-                for (int i = 0; i < len; i++) {
-                    items.add(read());
-                }
-                yield items;
+                yield readItems(len);
+            }
+            case '%' -> new RMap(readItems(2 * Integer.parseInt(line)));
+            case '~' -> new RSet(readItems(Integer.parseInt(line)));
+            case '>' -> new Push(readItems(Integer.parseInt(line)));
+            case ',' -> new RDouble(line);
+            case '#' -> line.equals("t");
+            case '_' -> NULL;
+            case '(' -> new BigNumber(line);
+            case '=' -> {
+                byte[] data = in.readNBytes(Integer.parseInt(line));
+                readLine();
+                String text = new String(data, StandardCharsets.ISO_8859_1);
+                yield new Verbatim(text.substring(0, 3), text.substring(4));
+            }
+            case '|' -> { // attributes: skip them, return the reply they annotate
+                readItems(2 * Integer.parseInt(line));
+                yield read();
             }
             default -> throw new IOException("Unexpected RESP type byte: " + type);
         };
+    }
+
+    private List<Object> readItems(int count) throws IOException {
+        List<Object> items = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            items.add(read());
+        }
+        return items;
     }
 
     private String readLine() throws IOException {

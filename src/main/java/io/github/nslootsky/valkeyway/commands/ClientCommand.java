@@ -65,7 +65,7 @@ public class ClientCommand implements CommandHandler {
                     : arity(sub);
             case "setname" -> n == 2 ? setName(connection, request.argString(1)) : arity(sub);
             case "setinfo" -> n == 3 ? setInfo(connection, request.argString(1), request.argString(2)) : arity(sub);
-            case "info" -> n == 1 ? Reply.bulk(line(connection) + "\n") : arity(sub);
+            case "info" -> n == 1 ? new Reply.Verbatim(line(connection) + "\n") : arity(sub);
             case "list" -> list(request);
             case "kill" -> n >= 2 ? kill(request) : arity(sub);
             case "reply" -> n == 2 ? reply(connection, request.argString(1)) : arity(sub);
@@ -176,7 +176,7 @@ public class ClientCommand implements CommandHandler {
                 out.append(line(c)).append('\n');
             }
         }
-        return Reply.bulk(out.toString());
+        return new Reply.Verbatim(out.toString());
     }
 
     /**
@@ -277,7 +277,7 @@ public class ClientCommand implements CommandHandler {
 
     /**
      * One client in CLIENT LIST format, with the fields Valkey 9 prints. Values the proxy doesn't track
-     * (buffers, memory, network totals) are 0; every client is a RESP2 client.
+     * (buffers, memory, network totals) are 0.
      */
     String line(Connection c) {
         boolean multi = c.inTransaction();
@@ -312,7 +312,7 @@ public class ClientCommand implements CommandHandler {
                 + " qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=0 rbp=0 obl=0 oll=0 omem=0 tot-mem=0"
                 + " events=r"
                 + " cmd=" + (last == null ? "NULL" : new String(last, StandardCharsets.ISO_8859_1).toLowerCase(Locale.ROOT))
-                + " user=" + userOf(c) + " redir=-1 resp=2"
+                + " user=" + userOf(c) + " redir=-1 resp=" + c.protocol()
                 + " lib-name=" + c.libName()
                 + " lib-ver=" + c.libVersion()
                 + " tot-net-in=0 tot-net-out=0"

@@ -155,6 +155,25 @@ class RespFidelityTest extends IntegrationTestBase {
         }
     }
 
+    /** COMMAND INFO: flags and ACL categories are statuses, tips are bulk strings, as a server sends them. */
+    @Test
+    void commandInfoFlagsAreStatuses() throws Exception {
+        try (RawRespClient c = connect()) {
+            List<?> entry = (List<?>) ((List<?>) c.call("COMMAND", "INFO", "KEYS")).getFirst();
+            assertEquals("keys", entry.get(0));
+            assertEquals(List.of(new Status("readonly")), entry.get(2));
+            for (Object category : (List<?>) entry.get(6)) {
+                assertInstanceOf(Status.class, category);
+            }
+            assertTrue(((List<?>) entry.get(7)).contains("nondeterministic_output_order"), entry.toString());
+
+            List<?> get = (List<?>) ((List<?>) c.call("COMMAND", "INFO", "GET")).getFirst();
+            List<?> keySpec = (List<?>) ((List<?>) get.get(8)).getFirst();
+            List<?> specFlags = (List<?>) keySpec.get(keySpec.indexOf("flags") + 1);
+            assertTrue(specFlags.contains(new Status("RO")), keySpec.toString());
+        }
+    }
+
     /** [upstream:G7] COMMAND DOCS argument flags are statuses; redis-cli asserts on it. */
     @Test
     void commandDocsFlagsAreStatuses() throws Exception {

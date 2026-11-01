@@ -34,6 +34,6 @@ public class InfoCommand implements InlineCommandHandler {
                 + "# Stats\r\n"
                 + "total_commands_processed:" + (long) metrics.getTotalCommands() + "\r\n"
                 + "total_errors:" + (long) metrics.getTotalErrors() + "\r\n";
-        return Reply.bulk(info);
+        return new Reply.Verbatim(info);
     }
 }
