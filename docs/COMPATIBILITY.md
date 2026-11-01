@@ -32,9 +32,10 @@ Through the proxy, these would reach whichever node Glide picks, so they're refu
 - SYNC/PSYNC/REPLCONF and MODULE;
 - CONFIG SET/REWRITE/RESETSTAT;
 - ACL SETUSER/DELUSER/LOAD/SAVE;
-- the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, ...).
+- SWAPDB, which would swap databases on one node only;
+- the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, MIGRATESLOTS, FLUSHSLOT, ...).
 
-Their read-only counterparts work, such as CONFIG GET, ACL WHOAMI and CLUSTER KEYSLOT. Run administration against the nodes directly, or set `forward` if you know where they'll land.
+Their read-only counterparts work, such as CONFIG GET, ACL WHOAMI and CLUSTER KEYSLOT. Run administration against the nodes directly, or set `forward` if you know where they'll land. This guards against mistakes, not malice: see [SECURITY.md](SECURITY.md#hardening).
 
 ## Differences from a standalone server
 
@@ -69,7 +70,8 @@ A cluster can only run a multi-key operation atomically when all its keys are in
 
 ### SCAN and replies
 
-- **SCAN cursors** are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one), and only in the database it started in.
+- **SCAN cursors** are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one), and only in the database it started in. The proxy keeps up to 10,000 cursors of unfinished scans across all clients, each for 5 minutes after its last use; beyond that, the oldest are dropped.
+- **CONFIG GET** redacts the values of password settings, and **ACL LIST and ACL GETUSER** are refused by default, so the cluster's credentials aren't shown through the proxy.
 - **Binary keys in SCAN:** keys whose bytes aren't valid UTF-8 come back with those bytes replaced, and MATCH patterns with such bytes match nothing (a Glide limitation). Other commands are binary-safe.
 - **Set order:** set replies (SMEMBERS, SINTER, ..., and the sets inside COMMAND INFO and DOCS) have the right members, but not necessarily in the server's order.
 

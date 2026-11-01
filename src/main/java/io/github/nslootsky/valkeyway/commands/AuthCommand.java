@@ -24,9 +24,12 @@ public class AuthCommand implements InlineCommandHandler {
     static final String WRONGPASS = "WRONGPASS invalid username-password pair or user is disabled.";
 
     private final Users users;
+    private final Runnable onFailure;
 
-    public AuthCommand(Users users) {
+    /** @param onFailure told about each wrong user or password (the proxy.auth.failures metric) */
+    public AuthCommand(Users users, Runnable onFailure) {
         this.users = users;
+        this.onFailure = onFailure;
     }
 
     @Override
@@ -43,18 +46,19 @@ public class AuthCommand implements InlineCommandHandler {
     public Reply execute(Request request) {
         return switch (request.argCount()) {
             case 1 -> users.authRequired()
-                    ? authenticate(request.connection(), users, Users.DEFAULT, request.arg(0))
+                    ? authenticate(request.connection(), users, Users.DEFAULT, request.arg(0), onFailure)
                     : Reply.error("ERR AUTH <password> called without any password configured for the default user. "
                             + "Are you sure your configuration is correct?");
-            case 2 -> authenticate(request.connection(), users, request.argString(0), request.arg(1));
+            case 2 -> authenticate(request.connection(), users, request.argString(0), request.arg(1), onFailure);
             case 0 -> Reply.error("ERR wrong number of arguments for 'auth' command");
             default -> Reply.error("ERR syntax error");
         };
     }
 
     /** Authenticates the connection as {@code user}; on a wrong password it keeps its current user. */
-    static Reply authenticate(Connection connection, Users users, String user, byte[] password) {
+    static Reply authenticate(Connection connection, Users users, String user, byte[] password, Runnable onFailure) {
         if (!users.check(user, password)) {
+            onFailure.run();
             return Reply.error(WRONGPASS);
         }
         connection.user(user);

@@ -6,6 +6,8 @@
 package io.github.nslootsky.valkeyway.commands;
 
 import io.github.nslootsky.valkeyway.transaction.WatchSessions;
+import io.github.nslootsky.valkeyway.backend.BackendClients;
+import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.transaction.TransactionQueue;
 import io.github.nslootsky.valkeyway.server.CommandHandler;
@@ -22,10 +24,17 @@ public class SelectCommand implements CommandHandler {
         return InTransaction.RUN;
     }
 
-    private final WatchSessions watches;
+    private static final String OUT_OF_RANGE = "ERR DB index is out of range";
+    /** How long a database the cluster refused is answered from memory, without trying again. */
+    private static final long INVALID_FOR_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
 
-    public SelectCommand(WatchSessions watches) {
+    private final WatchSessions watches;
+    private final BackendClients backendClients;
+    private final java.util.Map<Integer, Long> invalid = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public SelectCommand(WatchSessions watches, BackendClients backendClients) {
         this.watches = watches;
+        this.backendClients = backendClients;
     }
 
     @Override
@@ -44,11 +53,40 @@ public class SelectCommand implements CommandHandler {
             if (db < 0) {
                 return Reply.error("ERR DB index is out of range");
             }
+            // The database's backend client, created now if it's the first use: it connects only if
+            // the cluster has that database. Otherwise every later command would try again.
+            Long invalidUntil = invalid.get(db);
+            if (invalidUntil != null && System.nanoTime() < invalidUntil) {
+                return Reply.error(OUT_OF_RANGE);
+            }
+            try {
+                backendClients.getClient(db);
+                invalid.remove(db);
+            } catch (RuntimeException e) {
+                // Glide only says the connection failed. If database 0 works, the cluster is
+                // reachable and refused this database.
+                if (db != 0 && reachable()) {
+                    if (invalid.size() < 1000) {
+                        invalid.put(db, System.nanoTime() + INVALID_FOR_NANOS);
+                    }
+                    return Reply.error(OUT_OF_RANGE);
+                }
+                return ServerErrors.error(e);
+            }
             request.connection().db(db);
             watches.selected(request.connection());
             return Reply.OK;
         } catch (NumberFormatException e) {
             return Reply.error("ERR value is not an integer or out of range");
+        }
+    }
+
+    private boolean reachable() {
+        try {
+            backendClients.getClient(0);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 }

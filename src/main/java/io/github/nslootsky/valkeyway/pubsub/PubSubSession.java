@@ -30,6 +30,8 @@ public final class PubSubSession implements AutoCloseable {
     private final Connection connection;
     private final PubSubHub hub;
     private final Map<Kind, Set<String>> names = new EnumMap<>(Kind.class);
+    /** Set by {@link #close}; a closed session takes no new subscriptions. Guarded by this. */
+    private boolean closed;
 
     private PubSubSession(Connection connection, PubSubHub hub) {
         this.connection = connection;
@@ -72,8 +74,13 @@ public final class PubSubSession implements AutoCloseable {
         return names.get(kind).contains(name);
     }
 
-    void add(Kind kind, String name) {
+    /** Adds a subscription; false if the session was closed (the client disconnected) meanwhile. */
+    synchronized boolean add(Kind kind, String name) {
+        if (closed) {
+            return false;
+        }
         names.get(kind).add(name);
+        return true;
     }
 
     boolean remove(Kind kind, String name) {
@@ -108,7 +115,8 @@ public final class PubSubSession implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        closed = true;
         for (Kind kind : Kind.values()) {
             List<String> subscribed = all(kind);
             names.get(kind).clear();

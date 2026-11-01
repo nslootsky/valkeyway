@@ -13,6 +13,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Node administration commands are refused by default:** SHUTDOWN, REPLICAOF, FAILOVER, DEBUG, CONFIG SET, ACL SETUSER, CLUSTER MEET and similar commands would reach whichever node Glide picks. Set `proxy.node-admin-commands: forward` for the old behavior.
 - **Connection commands are answered by the proxy:** CLIENT, RESET, AUTH and READONLY/READWRITE. Forwarded, they acted on backend connections that every client shares.
 - **PUBLISH** returns the number of proxy clients that receive the message.
+- **Credentials are hidden:** CONFIG GET redacts the values of password settings, and ACL LIST and ACL GETUSER are refused unless `proxy.node-admin-commands: forward`.
 - **`proxy.connect-timeout-ms` is now `proxy.request-timeout-ms`.** The old name still works, with a deprecation warning.
 - **Admin commands:** `PROXY FLUSHCLIENTS` is gone, and `PROXY CONFIG` is GET-only.
 - **The Docker image** is now based on Ubuntu (glibc) rather than Alpine, and is published for linux/amd64 and linux/arm64 as `ghcr.io/nslootsky/valkeyway`.
@@ -54,6 +55,24 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Blocking commands' argument errors** use Valkey's wording.
 - **Pipelines:** a pipeline that mixed answered-locally commands and barriers could stall.
 - **Inline commands** follow Valkey 9's quoting, and RESP requests are checked for strict CRLF.
+- **Memory exhaustion:** a request's announced argument count (`*1048576`) no longer allocates the whole array up front, and per-command metrics no longer remember every made-up command name a client sends.
+- **Refused node commands:** SWAPDB and Valkey 9's slot migration commands (CLUSTER MIGRATESLOTS, SYNCSLOTS, CANCELSLOTMIGRATIONS, FLUSHSLOT) are now refused by default, like other node administration.
+- **ACL refusals** from the cluster are reported as NOPERM, not ERR.
+- **Blocking commands** of a client that disconnects now end, rather than keep a pooled backend client and pop a value nobody receives.
+- **SUBSCRIBE** while the client disconnects no longer leaks the subscription.
+- **SELECT** of a database the cluster doesn't have answers `ERR DB index is out of range`.
+- **Long-running commands** (KEYS, EVAL, FCALL, SORT, ...) are no longer coalesced with other clients' commands, where a timeout would have failed the whole batch.
+- **Pub/Sub:** messages queued behind a client's slow command count toward its 32 MB limit.
+
+### Security
+
+- **Auth timeout:** with a password set, connections that don't authenticate within `proxy.auth.timeout-seconds` (10 by default) are closed.
+- **Credentials:** CONFIG GET redacts password settings, and ACL LIST and ACL GETUSER are refused by default, so the cluster's credentials aren't readable through the proxy.
+- **Conflicting passwords:** setting both `proxy.auth.password` and `proxy.auth.users.default` is an error.
+- **Startup logging:** the proxy logs whether authentication is on, and warns when it's off on a non-local address, or when TLS settings won't take effect.
+- **Metrics:** `proxy.auth.failures` counts wrong passwords.
+- **Certificate rotation** waits until the files have stayed unchanged for one check.
+- **Hardening guidance** in [docs/SECURITY.md](docs/SECURITY.md#hardening), including a backend ACL user without `@admin`.
 
 ## [0.1.0] - 2026-07-30
 

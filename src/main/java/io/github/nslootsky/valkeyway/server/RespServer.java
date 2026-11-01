@@ -47,9 +47,10 @@ public final class RespServer implements AutoCloseable {
      * @param tlsPort TLS port, 0 for any free port, or -1 for none
      * @param tls     TLS settings, required with a TLS port
      * @param authRequired whether connections must AUTH first
+     * @param authTimeoutSeconds close a connection that hasn't authenticated after this long; 0 = never
      */
     public record Settings(String host, int port, int tlsPort, TlsContext tls, int ioThreads, int maxClients,
-                           long idleTimeoutSeconds, boolean authRequired) {
+                           long idleTimeoutSeconds, boolean authRequired, long authTimeoutSeconds) {
         public Settings {
             if (port < 0 && tlsPort < 0) {
                 throw new IllegalArgumentException("Neither a port nor a TLS port to listen on");
@@ -61,7 +62,7 @@ public final class RespServer implements AutoCloseable {
 
         /** Plain text only, without passwords (tests). */
         public Settings(String host, int port, int ioThreads, int maxClients, long idleTimeoutSeconds) {
-            this(host, port, -1, null, ioThreads, maxClients, idleTimeoutSeconds, false);
+            this(host, port, -1, null, ioThreads, maxClients, idleTimeoutSeconds, false, 0);
         }
     }
 
@@ -79,7 +80,8 @@ public final class RespServer implements AutoCloseable {
     public RespServer(Settings settings, CommandTable commands) {
         this.settings = settings;
         this.executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("client-", 0).factory());
-        this.context = new ServerContext(commands, executor, settings.maxClients(), settings.authRequired());
+        this.context = new ServerContext(commands, executor, settings.maxClients(), settings.authRequired(),
+                settings.authTimeoutSeconds());
     }
 
     public void start() throws InterruptedException {

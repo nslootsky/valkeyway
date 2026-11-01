@@ -37,6 +37,10 @@ public final class Users {
      * @param users           other users and their passwords; an entry for {@code default} sets its password
      */
     public Users(String defaultPassword, Map<String, String> users) {
+        if (users.containsKey(DEFAULT) && defaultPassword != null && !defaultPassword.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Set the default user's password with proxy.auth.password or proxy.auth.users.default, not both");
+        }
         String effectiveDefault = users.getOrDefault(DEFAULT, defaultPassword);
         this.defaultPassword = effectiveDefault == null || effectiveDefault.isEmpty() ? null : digest(effectiveDefault);
         users.forEach((name, password) -> {

@@ -20,7 +20,9 @@ class NodeAdminCommandsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"SHUTDOWN", "shutdown NOSAVE", "REPLICAOF host 6379", "SLAVEOF NO ONE", "FAILOVER",
+    @ValueSource(strings = {"SWAPDB 0 1", "CLUSTER FLUSHSLOT 7", "cluster migrateslots SLOTSRANGE 0 10 NODE x",
+            "CLUSTER CANCELSLOTMIGRATIONS", "CLUSTER SYNCSLOTS ESTABLISH",
+            "SHUTDOWN", "shutdown NOSAVE", "REPLICAOF host 6379", "SLAVEOF NO ONE", "FAILOVER",
             "DEBUG SLEEP 1", "SAVE", "BGSAVE", "BGREWRITEAOF", "MODULE LOAD x", "CONFIG SET maxmemory 1",
             "config rewrite", "CONFIG RESETSTAT", "ACL SETUSER bob", "CLUSTER MEET 1.2.3.4 6379", "CLUSTER RESET",
             "cluster setslot 1 node x", "CLUSTER FORGET id"})
