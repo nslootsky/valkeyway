@@ -55,17 +55,49 @@ class BlockingCommandsTest {
             "XREAD COUNT 10 STREAMS s $",
             "XREAD STREAMS BLOCK 0",          // a key named BLOCK after STREAMS is not the option
             "WAIT 1",
-            "BLPOP",
     })
     void ignoresNonBlockingCommands(String line) {
         assertTrue(BlockingCommands.detect(args(line)).isEmpty(), line);
     }
 
+    /** Valkey 9.1's errors for bad timeouts (getTimeoutFromObjectOrReply); Glide's own would differ. */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "BLPOP k -1                         | ERR timeout is negative",
+            "BLPOP k notanumber                 | ERR timeout is not a float or out of range",
+            "BLPOP k nan                        | ERR timeout is not a float or out of range",
+            "BLPOP k 1d                         | ERR timeout is not a float or out of range",
+            "BLPOP k 1e300                      | ERR timeout is out of range",
+            "BLPOP k inf                        | ERR timeout is out of range",
+            "BZMPOP -0.5 1 z MIN                | ERR timeout is negative",
+            "XREAD BLOCK x STREAMS s $          | ERR timeout is not an integer or out of range",
+            "XREAD BLOCK -1 STREAMS s $         | ERR timeout is negative",
+            "WAIT 0 -1                          | ERR timeout is negative",
+    })
+    void invalidTimeoutsGetValkeysErrors(String line, String error) {
+        assertEquals(error, spec(line).error());
+    }
+
+    /** Bare blocking commands are detected, so their arity is checked before Glide sees them. */
     @Test
-    void malformedTimeoutIsTreatedAsForever() {
-        assertTrue(spec("BLPOP k notanumber").waitsForever());
-        assertTrue(spec("BLPOP k -1").waitsForever());
-        assertTrue(spec("XREAD BLOCK x STREAMS s $").waitsForever());
+    void bareBlockingCommandsAreDetected() {
+        assertTrue(BlockingCommands.detect(args("BLPOP")).isPresent());
+        assertTrue(BlockingCommands.detect(args("BZMPOP")).isPresent());
+        assertNull(spec("BZMPOP").error(), "left to the arity check");
+    }
+
+    @Test
+    void hexTimeoutsAreParsedLikeStrtold() {
+        assertEquals("ERR timeout is out of range", spec("BLPOP k 0x7FFFFFFFFFFFFF").error());
+        assertEquals(16_000, spec("BLPOP k 0x10").timeoutMillis());
+    }
+
+    @Test
+    void validTimeoutsHaveNoError() {
+        assertNull(spec("BLPOP k 0").error());
+        assertNull(spec("BLPOP k 1.5e1").error());
+        assertNull(spec("BLPOP k .5").error());
+        assertNull(spec("XREAD BLOCK 0 STREAMS s $").error());
     }
 
     @Test

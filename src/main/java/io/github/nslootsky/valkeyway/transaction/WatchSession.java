@@ -5,7 +5,6 @@
 
 package io.github.nslootsky.valkeyway.transaction;
 
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import glide.api.GlideClusterClient;
 import glide.api.models.GlideString;
@@ -13,7 +12,9 @@ import io.github.nslootsky.valkeyway.backend.LeasePool;
 import io.github.nslootsky.valkeyway.backend.routing.ClusterSlots;
 
 import java.util.HashSet;
+import java.nio.ByteBuffer;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * One proxy connection's watched keys, on a dedicated backend client (see {@link WatchClientPool}).
@@ -29,7 +30,8 @@ public final class WatchSession implements AutoCloseable {
     private final int db;
     private final Set<Integer> slots = new HashSet<>();
     private byte[] firstKey;
-    private final AtomicInteger keyCount = new AtomicInteger();
+    /** The distinct watched keys, for CLIENT LIST (WATCHing a key again doesn't add to it). */
+    private final Set<ByteBuffer> keys = ConcurrentHashMap.newKeySet();
     private volatile boolean broken;
     private final AtomicBoolean released = new AtomicBoolean();
 
@@ -56,14 +58,14 @@ public final class WatchSession implements AutoCloseable {
         return firstKey;
     }
 
-    /** How many keys the connection has watched (WATCH calls add up), for CLIENT LIST. */
+    /** How many distinct keys the connection watches, for CLIENT LIST. */
     public int keyCount() {
-        return keyCount.get();
+        return keys.size();
     }
 
-    void watched(byte[][] keys) {
-        keyCount.addAndGet(keys.length);
-        for (byte[] key : keys) {
+    void watched(byte[][] watchedKeys) {
+        for (byte[] key : watchedKeys) {
+            keys.add(ByteBuffer.wrap(key));
             slots.add(ClusterSlots.slot(key));
             if (firstKey == null) {
                 firstKey = key;

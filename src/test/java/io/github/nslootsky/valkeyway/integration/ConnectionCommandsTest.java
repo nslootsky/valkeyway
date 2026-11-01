@@ -153,6 +153,49 @@ class ConnectionCommandsTest extends IntegrationTestBase {
         }
     }
 
+    /** CLIENT UNBLOCK ends another client's blocking command, as a timeout or with an error, as on Valkey. */
+    @Test
+    void clientUnblock() throws Exception {
+        try (RawRespClient admin = connect(); RawRespClient blocked = connect()) {
+            long id = (Long) blocked.call("CLIENT", "ID");
+            assertEquals(0L, admin.call("CLIENT", "UNBLOCK", Long.toString(id)), "not blocked");
+            assertEquals(new Error("ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"),
+                    admin.call("CLIENT", "UNBLOCK", Long.toString(id), "maybe"));
+            assertEquals(new Error("ERR value is not an integer or out of range"), admin.call("CLIENT", "UNBLOCK", "x"));
+
+            for (String mode : new String[]{"TIMEOUT", "ERROR"}) {
+                blocked.call("DEL", "conn:unblock");
+                blocked.send("BLPOP", "conn:unblock", "0");
+                long deadline = System.currentTimeMillis() + 5000;
+                Object unblocked = 0L;
+                while (unblocked.equals(0L) && System.currentTimeMillis() < deadline) {
+                    unblocked = admin.call("CLIENT", "UNBLOCK", Long.toString(id), mode);
+                }
+                assertEquals(1L, unblocked, mode);
+                Object reply = blocked.readReply();
+                assertEquals(mode.equals("ERROR") ? new Error("UNBLOCKED client unblocked via CLIENT UNBLOCK")
+                        : RawRespClient.NULL_ARRAY, reply, mode);
+                assertEquals(new Status("PONG"), blocked.call("PING"));
+            }
+            // The unblocked commands are gone from the node too: the next one gets the element.
+            blocked.send("BLPOP", "conn:unblock", "0");
+            long deadline = System.currentTimeMillis() + 5000;
+            while (!((String) admin.call("CLIENT", "LIST", "ID", Long.toString(id))).contains("flags=b")
+                    && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            admin.call("LPUSH", "conn:unblock", "x");
+            assertEquals(List.of("conn:unblock", "x"), blocked.readReply());
+        }
+    }
+
+    @Test
+    void importSourceAnswersAsWithImportModeOff() throws Exception {
+        try (RawRespClient c = connect()) {
+            assertEquals(new Error("ERR Server is not in import mode"), c.call("CLIENT", "IMPORT-SOURCE", "ON"));
+        }
+    }
+
     @Test
     void proxyCommands() throws Exception {
         try (RawRespClient a = connect(); RawRespClient b = connect()) {

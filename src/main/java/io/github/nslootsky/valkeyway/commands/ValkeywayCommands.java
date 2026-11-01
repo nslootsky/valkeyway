@@ -23,6 +23,7 @@ import io.github.nslootsky.valkeyway.ops.MetricsCollector;
 import io.github.nslootsky.valkeyway.pubsub.Kind;
 import io.github.nslootsky.valkeyway.pubsub.PubSubCommand;
 import io.github.nslootsky.valkeyway.pubsub.PubSubHub;
+import io.github.nslootsky.valkeyway.pubsub.PublishCommand;
 import io.github.nslootsky.valkeyway.server.CommandTable;
 import io.github.nslootsky.valkeyway.server.Users;
 
@@ -45,7 +46,7 @@ public final class ValkeywayCommands {
         NodeAdminCommands nodeAdmin = new NodeAdminCommands(props.nodeAdminCommands() == ValkeywayProperties.NodeAdmin.REJECT);
         CatchAllCommand catchAll = new CatchAllCommand(backendClients, backend, keys,
                 props.glide().coalesceRequests() ? new Coalescer(backendClients, backend) : null,
-                new BlockingCommandRunner(blockingPool, backend),
+                new BlockingCommandRunner(blockingPool, backend, backendClients),
                 new TransactionQueue(backendClients, keys, nodeAdmin), nodeAdmin);
         ClientCommand client = new ClientCommand(watches);
         CommandTable table = new CommandTable(catchAll)
@@ -70,7 +71,7 @@ public final class ValkeywayCommands {
                 .register("scan", new ScanCommand(backendClients, scanCursorStore))
                 .register("proxy", new ValkeywayAdminCommand(backendClients, metrics, client, props))
                 .register("hello", new HelloCommand(users))
-                .register("info", new InfoCommand(metrics))
+                .register("info", new InfoCommand(backendClients, metrics, watches))
                 .register("cluster", new ClusterCommand(backendClients, backend, nodeAdmin))
                 .register("client", client)
                 .register("command", new CommandCommand(backendClients))
@@ -91,6 +92,8 @@ public final class ValkeywayCommands {
             table.register(prefix + "subscribe", PubSubCommand.subscribe(pubSub, kind));
             table.register(prefix + "unsubscribe", PubSubCommand.unsubscribe(pubSub, kind));
         }
+        table.register("publish", new PublishCommand(catchAll, pubSub, false));
+        table.register("spublish", new PublishCommand(catchAll, pubSub, true));
         return table;
     }
 }

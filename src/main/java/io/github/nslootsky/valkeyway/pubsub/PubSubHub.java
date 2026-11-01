@@ -125,6 +125,31 @@ public class PubSubHub implements AutoCloseable {
         });
     }
 
+    /**
+     * How many proxy clients receive a message published to {@code channel}: for a regular channel,
+     * its subscribers plus those of every matching pattern (as a standalone server counts PUBLISH's
+     * receivers); for a shard channel, its subscribers.
+     */
+    public long receivers(boolean shard, byte[] channel) {
+        String name = new String(channel, StandardCharsets.UTF_8);
+        if (shard) {
+            return count(Kind.SHARD, name);
+        }
+        long total = count(Kind.CHANNEL, name);
+        for (Map.Entry<String, Set<PubSubSession>> pattern : subscribers.get(Kind.PATTERN).entrySet()) {
+            if (Glob.matches(pattern.getKey().getBytes(StandardCharsets.UTF_8), channel)) {
+                total += count(Kind.PATTERN, pattern.getKey());
+            }
+        }
+        return total;
+    }
+
+    /** Sessions still subscribed to {@code name} (an UNSUBSCRIBE takes effect in the session at once). */
+    private long count(Kind kind, String name) {
+        Set<PubSubSession> sessions = subscribers.get(kind).get(name);
+        return sessions == null ? 0 : sessions.stream().filter(s -> s.has(kind, name)).count();
+    }
+
     private GlideClusterClient client(Kind kind) throws Exception {
         if (kind == Kind.SHARD) {
             if (sharded == null) {

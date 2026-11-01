@@ -201,6 +201,14 @@ class DifferentialRepliesTest extends IntegrationTestBase {
                 of("GEOPOS missing member is a nested null array", GEO, "GEOPOS", "%g", "nope", "Palermo"),
                 of("GEOSEARCH WITHHASH (64-bit)", GEO, "GEOSEARCH", "%g", "FROMLONLAT", "15", "37", "BYRADIUS", "200", "km",
                         "ASC", "WITHDIST", "WITHHASH", "WITHCOORD"),
+                // Blocking commands' argument errors (Glide checks these itself, in its own words)
+                of("BLPOP negative timeout", List.of(), "BLPOP", "%l", "-1"),
+                of("BLPOP timeout not a float", List.of(), "BLPOP", "%l", "abc"),
+                of("BLPOP timeout out of range", List.of(), "BLPOP", "%l", "1e300"),
+                of("BRPOP missing timeout", List.of(), "BRPOP", "%l"),
+                of("BZMPOP wrong arity", List.of(), "BZMPOP", "1"),
+                of("XREAD BLOCK negative", streamOf(1), "XREAD", "BLOCK", "-1", "STREAMS", "%s", "$"),
+                of("XREAD BLOCK not an integer", streamOf(1), "XREAD", "BLOCK", "x", "STREAMS", "%s", "$"),
                 // Sets come back from Glide as Java sets; members are unordered by definition
                 unordered("SMEMBERS", List.<String[]>of(c("DEL", "%st"), c("SADD", "%st", "c", "a", "b", "ÿ")), "SMEMBERS", "%st"),
                 unordered("SINTER", List.<String[]>of(c("DEL", "%st", "%st2"), c("SADD", "%st", "a", "b", "c"), c("SADD", "%st2", "b", "c")),

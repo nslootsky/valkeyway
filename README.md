@@ -7,330 +7,61 @@
   </p>
 </div>
 
-A RESP proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone Valkey instance.
+ValkeyWay is a proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone Valkey server. Applications and tools that only speak to one server connect to it unchanged, with no cluster-aware client needed, while the data lives in a cluster.
 
-ValkeyWay is a Java 25 + Spring Boot proxy that sits between non-cluster-aware clients and a Valkey/Redis cluster. It uses [valkey-glide](https://github.com/valkey-io/valkey-glide) for cluster routing, MOVED/ASK handling, and multi-slot command splitting, and its own Netty-based RESP server for clients.
+It is built on Java 25 and Netty, and uses [valkey-glide](https://github.com/valkey-io/valkey-glide) to talk to the cluster.
 
-Clients connect to ValkeyWay on port 6379 and interact with the cluster as if it were a standalone server.
-
-## Quick Start
+## Quick start
 
 ```bash
-# Docker
-docker run -d --name valkeyway \
-  -p 6379:6379 -p 6380:6380 \
-  nslootsky/valkeyway:latest \
-  --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+docker run -d --name valkeyway -p 6379:6379 -p 6380:6380 \
+  nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 
-# Clients connect to localhost:6379
 valkey-cli SET mykey hello
-valkey-cli GET mykey
-# → "hello"
+valkey-cli MGET key1 key2 key3     # keys on different nodes, one reply
 ```
 
 ## Features
 
-**Standalone compatibility**
-- Works with any RESP2 or RESP3 (`HELLO 3`) client, no cluster support needed. Replies match what a standalone Valkey server sends, in either protocol, including:
-  - reply shapes that Glide changes;
-  - null arrays versus null bulk strings;
-  - number formats;
-  - error codes.
+- **Looks like a standalone server.** RESP2 and RESP3 clients get the replies a standalone Valkey sends, byte for byte, which is checked against real nodes and Valkey's own test suite.
+- **Cluster work handled.** Commands are routed by key, redirects are followed, and multi-key commands are split across slots. SCAN covers the whole cluster, and SELECT works per connection.
+- **Transactions and WATCH,** atomic when a transaction's keys share a slot, and **Pub/Sub,** including sharded channels.
+- **Fast.** Pipelines and concurrent clients' commands are batched to the cluster: 200–290k requests/s unpipelined and ~620k with pipelines, measured on one 24-core machine. Blocking commands never hold up other clients.
+- **Survives cluster changes:** slot migrations, new shards, failovers, and a seed DNS name re-pointed at another cluster.
+- **Secure when you need it:** client passwords, TLS for clients, and TLS with credentials to the cluster. All of it is off by default.
+- **Observable:** health checks, metrics and Prometheus on a separate port.
 
-  More than 70 commands are checked byte for byte against a direct connection to a node, in both protocols.
-- Cross-slot commands such as DEL, MGET and UNLINK are split per slot and aggregated.
-- Multiple databases: SELECT with per-connection state (Valkey 9+ cluster mode).
-- Transactions: MULTI/EXEC and WATCH, atomic when all keys share a slot (use hash tags such as `{user1}`). Queue-time errors and EXECABORT behave as in Valkey, and WATCH is private to each client connection.
-- Cluster-wide SCAN, with cursors that work across connections.
-- Pub/Sub: SUBSCRIBE, PSUBSCRIBE and SSUBSCRIBE, in RESP2 (subscribed mode) and RESP3 (pushes). Clients share the proxy's subscriptions to the cluster, and each message is fanned out to every subscribed client.
-- Pipelining and inline commands.
-- Standalone-style HELLO and INFO; `CLUSTER INFO` and `CLUSTER NODES` answer like a server without cluster support.
+## Compatibility
 
-**Performance**
-- A client's pipeline goes to the cluster as one ordered batch.
-- Single commands that arrive on different connections at the same time are sent to Glide as one shared batch.
-- Example measurements on one 24-core machine (see [docs/RESP_LAYER.md](docs/RESP_LAYER.md)):
-  - 200–290k requests/s from 50–200 unpipelined clients;
-  - up to ~620k requests/s with 16-deep pipelines.
-- Blocking commands (BLPOP, XREAD BLOCK, WAIT, ...) run on a pool of dedicated backend clients, so a blocked command never holds up other clients.
+Most applications see no difference from a standalone server. The exceptions come from what a cluster can't do, chiefly atomic operations on keys in different hash slots. Use hash tags, such as `{user1}:name` and `{user1}:email`, to keep keys that are used together in one slot. Commands that administer a single node, such as SHUTDOWN or CONFIG SET, are refused by default.
 
-**Cluster changes**: slot migrations, new shards, failovers and a re-pointed seed DNS name are handled under live traffic. See [Cluster changes](#cluster-changes) for what clients see in each case.
-
-**Security**
-- Client authentication: a password for the default user (like `requirepass`) and named users, with AUTH and HELLO ... AUTH. Until a client authenticates it gets NOAUTH, and its requests are size-limited as in Valkey.
-- TLS for clients on a separate port, alongside or instead of plain text, optionally requiring client certificates. Certificates are reloaded when their files change.
-- TLS and a username/password to the cluster.
-
-All of it is off by default; [docs/SECURITY.md](docs/SECURITY.md) shows how to set it up.
-
-**Operations**: health checks, metrics and Prometheus through Spring Boot Actuator on port 6380.
-
-## Architecture
-
-```
-Clients (RESP2, no cluster support needed)
-         │
-         ▼
-┌────────────────────────────────────────────────┐
-│  ValkeyWay :6379                               │
-│                                                │
-│  server: Netty RESP server (epoll/NIO)         │
-│    RespDecoder / ReplyEncoder                  │
-│    Connection: per-client state; replies in    │
-│      order; one backend unit in flight         │
-│    CommandTable → commands                     │
-│      ├─ PING ECHO TIME HELLO INFO SCAN ...     │
-│      ├─ MULTI/EXEC/WATCH → transaction         │
-│      ├─ blocking commands → blocking           │
-│      │    (dedicated clients)                  │
-│      └─ everything else → CatchAllCommand      │
-│                                                │
-│  backend: Backend (single commands,            │
-│    pipelines), Coalescer (batches across       │
-│    connections), BackendClients (one Glide     │
-│    client per database)                        │
-│    routing: slots, key specs, explicit routes  │
-│    replies: RESP2 shapes, error codes          │
-│                                                │
-│  valkey-glide: slot routing, MOVED/ASK,        │
-│    multi-slot splitting, topology              │
-└────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐
-│ Valkey   │ │ Valkey   │ │ Valkey   │
-│ :7000    │ │ :7001    │ │ :7002    │
-└──────────┘ └──────────┘ └──────────┘
-```
-
-Each connection has at most one backend unit in flight: a single command, or a batch of everything it has queued. Glide keeps order within a batch but not across separate requests, so this is what keeps each client's commands in order. Commands that change connection state, or may block, wait for earlier replies and run on a virtual thread.
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) describes how each kind of command is handled, and every difference from a standalone server.
 
 ## Configuration
 
-Via `application.yml` or command-line args:
+Only the seed nodes are required. Settings can come from `application.yml`, command-line arguments or environment variables:
 
 ```yaml
 proxy:
-  host: 0.0.0.0                 # Listen address for clients
-  port: 6379                    # Listen port for clients
-  cluster-nodes:                # Seed nodes: IPs or DNS names (e.g. a configuration endpoint)
-    - "127.0.0.1:7000"
-    - "127.0.0.1:7001"
-    - "127.0.0.1:7002"
-  request-timeout-ms: 2000      # Timeout per backend request, including Glide's retries (old name connect-timeout-ms still works)
-  blocking-pool:                # Dedicated backend clients for BLPOP, XREAD BLOCK, WAIT, ...
-    max-size: 64                # Max blocking commands running at once; more wait for a free client
-    idle-timeout-seconds: 60    # Close a pooled client after this long unused
-  glide:
-    inflight-requests-limit: 50000  # Outstanding requests per Glide client (Glide's default is 1000)
-    coalesce-requests: true         # Send concurrent clients' commands to Glide in shared batches
-    refresh-topology-from-seeds: true  # Check topology via the seeds, re-resolving DNS names (follows a re-pointed endpoint)
-    topology-check-seconds: 0       # How often Glide checks for topology changes; 0 = Glide's default (60)
-  transactions:
-    cross-slot: reject          # EXEC whose keys span slots: reject (CROSSSLOT, like a cluster node) or pipeline (run without atomicity)
-    watch-pool:                 # Dedicated backend clients for connections that use WATCH
-      max-size: 64              # Connections with keys watched at once; more wait
-      idle-timeout-seconds: 60  # Close a pooled client after this long unused
-      acquire-timeout-ms: 2000  # How long WATCH waits for a free client before failing
-  node-admin-commands: reject   # SHUTDOWN, REPLICAOF, CONFIG SET, ...: reject, or forward (to whichever node Glide picks)
-  auth:                         # Client authentication; unset = none (like a server without requirepass)
-    password: ${VALKEYWAY_PASSWORD:}  # The default user's password: AUTH <password>
-    users:                      # Named users: AUTH <user> <password>. Every user can run every command.
-      app: ${VALKEYWAY_APP_PASSWORD:}
-  tls:                          # TLS for clients
-    port: 0                     # TLS port, alongside proxy.port; 0 = off. Set proxy.port: 0 for TLS only.
-    cert-file: /etc/valkeyway/tls/server.crt  # PEM certificate chain (reloaded when it changes)
-    key-file: /etc/valkeyway/tls/server.key   # PEM private key, PKCS#8 ("BEGIN PRIVATE KEY")
-    key-password:               # If the key is encrypted
-    ca-file: /etc/valkeyway/tls/ca.crt        # CA for client certificates
-    client-certs: none          # none, optional or required (Valkey's tls-auth-clients)
-    protocols: TLSv1.2,TLSv1.3  # Default: the JDK's
-  backend:                      # How the proxy connects to the cluster
-    username: proxy             # Unset = default
-    password: ${VALKEY_PASSWORD:}  # Unset = no AUTH
-    tls:
-      enabled: false
-      ca-file:                  # CA to trust; unset = the system trust store
-      insecure: false           # Skip certificate verification
-  clients:
-    max-clients: 10000          # Connections accepted at once (like Valkey's maxclients)
-    timeout-seconds: 0          # Close clients idle this long; 0 = never (like Valkey's timeout)
-    io-threads: 2               # Network threads; fewer = bigger backend batches (1 is fastest for small values)
-
-management:
-  server:
-    port: 6380                    # Separate port for actuator endpoints
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
+  port: 6379
+  cluster-nodes:                # IPs or DNS names, e.g. a configuration endpoint
+    - "node1:7000"
+    - "node2:7001"
 ```
 
-For passwords, TLS and their environment variables, see [docs/SECURITY.md](docs/SECURITY.md).
+The full reference is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), and passwords and TLS are in [docs/SECURITY.md](docs/SECURITY.md).
 
-With TLS to the cluster, Glide checks each node's certificate against the address the cluster reports for it (usually an IP), so the certificates must name those addresses or `insecure` must be set. Glide can't present a client certificate, so the cluster must not require one (`tls-auth-clients no` or `optional`).
+## Documentation
 
-Seed nodes can be IPs or DNS names. With `refresh-topology-from-seeds` (the default), Glide re-resolves and asks the seeds at each topology check, so re-pointing a DNS name at another cluster (a blue/green cutover) moves the proxy there at the next check. Glide refreshes slots at most once every 15–30 s, so a cutover can take that much longer. If the seeds can't be reached, the proxy keeps using the nodes it already knows.
-
-Or via CLI:
-
-```bash
-java -jar valkeyway.jar \
-  --proxy.host=0.0.0.0 \
-  --proxy.port=6379 \
-  --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
-```
-
-## Cluster changes
-
-What clients see while the cluster changes shape. `TopologyChangeTest` exercises each case under live traffic.
-
-| Change | Clients see |
+| Document | What's in it |
 |---|---|
-| Slot migration (ASK, TRYAGAIN) | Commands succeed. Inside a client pipeline, a multi-key command whose keys are split mid-migration gets `TRYAGAIN` (and likewise `CLUSTERDOWN` and similar errors during a failover). A standalone server's pipeline reports errors per command too. |
-| Slot moved, also to a newly added shard | Commands succeed, including inside pipelines. |
-| Graceful failover (`CLUSTER FAILOVER`) | No errors. |
-| A primary dies | Its shard's commands fail until the replica is promoted (about the cluster's node timeout), then succeed without a proxy restart. |
-| A primary hangs (frozen process, network partition) | Its shard's commands time out until the node answers again, even after its replica is promoted (a Glide limitation). |
-| A seed DNS name is re-pointed at another cluster | The proxy moves to the new cluster at its next topology check (see [Configuration](#configuration)). |
+| [Configuration](docs/CONFIGURATION.md) | Every setting, seed nodes and DNS, tuning |
+| [Security](docs/SECURITY.md) | Client passwords, TLS for clients and to the cluster |
+| [Operations](docs/OPERATIONS.md) | Running, health and metrics, what clients see during cluster changes |
+| [Compatibility](docs/COMPATIBILITY.md) | How commands are handled, differences from a standalone server |
+| [Architecture](docs/ARCHITECTURE.md) | How the proxy works, and links to its design notes |
+| [Development](docs/DEVELOPMENT.md) | Building, testing, running locally |
 
-When the cluster can't serve a command, the error says whether the command ran, so the client can decide whether retrying is safe:
+## License
 
-- `ERR backend unavailable: ...; the command did not run`
-- `ERR backend unavailable: ...; the command may or may not have run`
-- `ERR backend request timed out; the command may or may not have run`
-
-## Building and Running
-
-```bash
-# Build
-./mvnw package -DskipTests
-
-# Run unit tests (no Docker required)
-./mvnw test
-
-# Run integration tests (requires Docker or Podman)
-./mvnw verify -Dskip.integration.tests=false
-
-# Run locally (with cluster on ports 7000-7002)
-java -jar target/valkeyway-0.1.0.jar
-
-# Test with valkey-cli (no --cluster flag needed)
-valkey-cli -h 127.0.0.1 -p 6379 SET mykey hello
-valkey-cli -h 127.0.0.1 -p 6379 GET mykey
-# → "hello"
-
-# Cross-slot MGET works automatically
-valkey-cli -h 127.0.0.1 -p 6379 MGET key1 key2 key3
-
-# Cross-slot DEL works automatically
-valkey-cli -h 127.0.0.1 -p 6379 DEL key1 key2 key3
-
-# Cluster-wide SCAN
-valkey-cli -h 127.0.0.1 -p 6379 SCAN 0 MATCH "prefix:*" COUNT 100
-```
-
-## Docker
-
-```bash
-# Build image
-docker build -t valkeyway:latest .
-
-# Run with existing cluster
-docker run -d --name valkeyway \
-  -p 6379:6379 -p 6380:6380 \
-  valkeyway:latest \
-  --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
-
-# Local dev with full cluster (docker-compose.dev.yml)
-docker compose -f docker-compose.dev.yml up -d
-```
-
-## Health and Metrics
-
-Spring Boot Actuator endpoints are exposed on a separate management port (default 6380):
-
-- **Health**: `GET http://localhost:6380/actuator/health`
-  - Includes `cluster` health indicator that pings the Valkey cluster
-  - Returns UP if reachable, DOWN with error details otherwise
-
-- **Metrics**: `GET http://localhost:6380/actuator/metrics`
-  - `proxy.commands.processed` — total commands processed (tagged by command type)
-  - `proxy.errors` — total command errors
-  - `proxy.blocking.pool.in_use` / `proxy.blocking.pool.clients` — blocking commands running / pooled clients open
-  - `proxy.blocking.pool.exhausted_waits` — blocking commands that had to wait because the pool was full
-  - `proxy.watch.pool.in_use` / `proxy.watch.pool.clients` / `proxy.watch.pool.exhausted_waits` — the same for connections using WATCH
-  - `proxy.commands.latency` — command execution latency histogram
-
-- **Prometheus**: `GET http://localhost:6380/actuator/prometheus`
-  - Prometheus-scrapeable metrics format
-
-## Supported Commands
-
-### Dedicated handlers
-
-- SCAN (cluster-wide iteration with cursor persistence)
-- SELECT (per-session DB state)
-- MULTI/EXEC/DISCARD (transactions, queued by the proxy; atomic within a slot)
-- WATCH/UNWATCH (on a dedicated backend client per connection)
-- INFO (proxy-specific response with role:master)
-- HELLO (RESP2 or RESP3, standalone-mode response; HELLO ... AUTH and SETNAME)
-- CLUSTER (standalone errors for INFO/NODES; others proxied)
-- COMMAND (all subcommands proxied; DOCS format adjusted for redis-cli)
-- PING, ECHO, TIME, QUIT (answered by the proxy)
-- CLIENT (ID, INFO, LIST, KILL, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), RESET, AUTH, READONLY/READWRITE: answered by the proxy from its own connections. Forwarded, they would act on backend connections that every client shares.
-- AUTH and ACL WHOAMI use the proxy's own users (`proxy.auth.*`); other ACL subcommands go to a node.
-- SUBSCRIBE/PSUBSCRIBE/SSUBSCRIBE and their UNSUBSCRIBE counterparts: through the proxy's shared subscriptions (PUBLISH, SPUBLISH and PUBSUB go to the cluster)
-- PROXY: STATS, CLIENTINFO <id>, CONFIG GET <name|*>, CLUSTER INFO, HELP
-- Commands that administer a single node are refused by default (`proxy.node-admin-commands`), since through the proxy they reach whichever node Glide picks: SHUTDOWN, REPLICAOF/SLAVEOF, FAILOVER, DEBUG, SAVE, BGSAVE, BGREWRITEAOF, SYNC/PSYNC/REPLCONF, MODULE, CONFIG SET/REWRITE/RESETSTAT, ACL SETUSER/DELUSER/LOAD/SAVE, and the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, ...). Their read-only counterparts (CONFIG GET, ACL WHOAMI, CLUSTER KEYSLOT, ...) work.
-- Blocking commands (BLPOP, BRPOP, BLMOVE, BZPOPMIN, XREAD/XREADGROUP BLOCK, WAIT, ...) run on dedicated backend clients
-
-### All other commands (via customCommand)
-
-- GET, SET, SETEX, GETSET, DEL, UNLINK, EXISTS, TTL, EXPIRE
-- HGET, HSET, HGETALL, HMGET, HDEL, HINCRBY
-- LPUSH, RPUSH, LPOP, RPOP, LRANGE
-- MGET, INCR, DECR, PING, TIME
-- SCRIPT/EVAL, CONFIG, CLIENT subcommands
-- Keys routed by glide; cross-slot operations may return CROSSSLOT errors
-
-## Design notes and upstream assumptions
-
-- [docs/SECURITY.md](docs/SECURITY.md): client passwords, TLS for clients and to the cluster, in practice.
-- [docs/RESP_LAYER.md](docs/RESP_LAYER.md): design of the client protocol layer, measurements, and findings about Glide.
-- [docs/UPSTREAM_ASSUMPTIONS.md](docs/UPSTREAM_ASSUMPTIONS.md): every detail of valkey-glide and Valkey that the proxy relies on but that isn't a stable API, such as Glide's error message formats, the Java types it returns, what it retries, and Valkey's reply formats. Each entry lists the code it affects (tagged `[upstream:ID]`) and the test that catches a change. Check it when upgrading either.
-
-## Tech Stack
-
-- Java 25
-- Spring Boot 4.1.2
-- Netty 4.2 (client-facing RESP server; native epoll on Linux)
-- valkey-glide 2.5.3 (cluster client)
-- Micrometer + Spring Boot Actuator (metrics and health)
-- Maven Wrapper
-
-## Limitations
-
-- Proxy users have no ACL rules: every user can run every command. AUTH and HELLO are rejected inside MULTI.
-- TLS to the cluster can't use a client certificate (a Glide limitation).
-- Private keys must be PKCS#8 (`BEGIN PRIVATE KEY`); convert others with `openssl pkcs8 -topk8 -nocrypt`.
-- MONITOR is rejected.
-- Pub/Sub:
-  - PUBSUB CHANNELS, NUMSUB and NUMPAT are answered by one node, which counts the proxy as a single subscriber.
-  - Channel names that aren't valid UTF-8 aren't passed on exactly (a Glide limitation); payloads are binary-safe.
-  - Keyspace notifications arrive only from the node the proxy's subscription is on, since a node publishes them only locally.
-  - SUBSCRIBE and friends are rejected inside MULTI.
-  - A subscriber that falls 100,000 messages or 32 MB behind is disconnected, like Valkey's `client-output-buffer-limit pubsub`.
-- CLIENT PAUSE, UNPAUSE, TRACKING (client-side caching), CACHING, GETREDIR, TRACKINGINFO and UNBLOCK are rejected. NO-EVICT and NO-TOUCH are accepted but only recorded. In CLIENT LIST, `cmd` is the last command's name, and buffer, memory and network fields are 0.
-- A transaction is atomic only when all its keys share a slot. A cross-slot transaction is rejected with CROSSSLOT by default; with `proxy.transactions.cross-slot=pipeline`, its commands run in order without any atomicity. With WATCH, a cross-slot transaction is always rejected.
-- Inside MULTI, INFO, HELLO, SCAN, CLUSTER, PROXY and SELECT are rejected and the transaction is discarded. The proxy answers the first five itself, which EXEC on a node can't reproduce, and SELECT would switch the database of the shared backend connection.
-- SELECT between WATCH and EXEC makes EXEC abort, as if a watched key had changed (clients retry).
-- EVAL/EVALSHA with keys on several nodes fails with CROSSSLOT.
-- During a slot migration, a pipelined command that gets redirected can run after later commands of the same pipeline. Cluster-aware clients (Lettuce, Jedis) behave the same way.
-- A primary that hangs without closing its connections isn't routed around until it answers again (see [Cluster changes](#cluster-changes)).
-- SCAN cursors are UUIDs rather than numbers; `0` still marks the end. A cursor can be used once (each call returns the next one) and only in the database it started in.
-- SCAN returns keys whose bytes aren't valid UTF-8 with those bytes replaced, and MATCH patterns with such bytes match nothing (a Glide limitation). Other commands are binary-safe.
-- Set replies (SMEMBERS, SINTER, ..., and the sets inside COMMAND INFO and COMMAND DOCS) contain the right members, but not necessarily in the server's order: Glide returns them as unordered Java sets.
+[MIT](LICENSE)

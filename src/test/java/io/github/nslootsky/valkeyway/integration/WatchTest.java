@@ -157,6 +157,42 @@ class WatchTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * A transaction of keyless commands still runs on the node holding the watches, so a change to a
+     * watched key aborts it (found with Valkey's own test suite). Repeated, since the bug sent it to a
+     * random node.
+     */
+    @Test
+    void aKeylessTransactionStillChecksWatchedKeys() throws Exception {
+        try (RawRespClient a = connect(); RawRespClient b = connect()) {
+            for (int i = 0; i < 10; i++) {
+                a.call("SET", "{w10}k", "1");
+                a.call("WATCH", "{w10}k");
+                b.call("SET", "{w10}k", "changed");
+                a.call("MULTI");
+                a.call("PING");
+                assertEquals(RawRespClient.NULL_ARRAY, a.call("EXEC"), "round " + i);
+            }
+            a.call("WATCH", "{w10}k");
+            a.call("MULTI");
+            a.call("PING");
+            assertEquals(List.of(new Status("PONG")), a.call("EXEC"), "unchanged: runs");
+        }
+    }
+
+    /** CLIENT LIST's watch= counts distinct keys, as Valkey's does. */
+    @Test
+    void watchingAKeyAgainDoesntCountTwice() throws Exception {
+        try (RawRespClient a = connect()) {
+            a.call("WATCH", "{w11}x");
+            a.call("WATCH", "{w11}x", "{w11}x");
+            a.call("WATCH", "{w11}x", "{w11}y");
+            String info = (String) a.call("CLIENT", "INFO");
+            assertTrue(info.contains(" watch=2 "), info);
+            a.call("UNWATCH");
+        }
+    }
+
     /** Watches in one database can't be checked by an EXEC in another; the proxy aborts rather than run unprotected. */
     @Test
     void selectingAnotherDatabaseAfterWatchAbortsExec() throws Exception {

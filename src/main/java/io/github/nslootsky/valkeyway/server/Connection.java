@@ -14,6 +14,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.EventLoop;
+import io.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -126,6 +127,12 @@ public final class Connection {
     private volatile int protocol = 2;
     /** Whether the client has Pub/Sub subscriptions. */
     private volatile boolean subscribed;
+    /** The keys of the blocking command the client waits in (BLPOP, XREAD BLOCK, ...), or {@code null}. */
+    private volatile List<byte[]> blockedOn;
+    /** Whether that command is also unblocked by its key being deleted (XREADGROUP). */
+    private volatile boolean blockedOnNoKey;
+    /** Ends the client's blocking command early (CLIENT UNBLOCK): true = with an error, false = as a timeout. */
+    private volatile java.util.function.Consumer<Boolean> unblocker;
     /** Pushed messages waiting behind replies or for the socket. Event loop only. */
     private int pendingPushes;
     private boolean inTransaction;
@@ -325,7 +332,7 @@ public final class Connection {
             if (head.push) {
                 pendingPushes--;
             }
-            if (head.push || sendReply()) {
+            if (head.push || isPush(head.reply) || sendReply()) {
                 channel.write(head.resp3 ? new ReplyEncoder.Resp3(head.reply) : head.reply);
                 wrote = true;
             }
@@ -410,6 +417,15 @@ public final class Connection {
                 }
             }
         }
+    }
+
+    /**
+     * Pub/Sub confirmations ((P|S)(UN)SUBSCRIBE), like messages, are sent even with CLIENT REPLY OFF,
+     * as Valkey sends everything it pushes. [upstream:V8]
+     */
+    private static boolean isPush(Reply reply) {
+        return reply instanceof Reply.Push
+                || (reply instanceof Reply.Multi(List<Reply> replies) && !replies.isEmpty() && replies.getFirst() instanceof Reply.Push);
     }
 
     /** Whether to send the next reply, per CLIENT REPLY. Event loop only. */
@@ -556,6 +572,55 @@ public final class Connection {
             pendingPushes++;
             writeCompleted();
         });
+    }
+
+    /** Whether the client connected over TLS. */
+    public boolean tls() {
+        return channel.pipeline().get(SslHandler.class) != null;
+    }
+
+    /** Whether the client is in a blocking command, for INFO's blocked_clients and CLIENT LIST. */
+    public boolean blocked() {
+        return blockedOn != null;
+    }
+
+    /** The keys the client is blocked on (for INFO's total_blocking_keys), or {@code null}. */
+    public List<byte[]> blockedOn() {
+        return blockedOn;
+    }
+
+    /**
+     * Marks the client as waiting in a blocking command on {@code keys}, which {@code unblocker} ends
+     * early (CLIENT UNBLOCK). The hook is in place before the client shows as blocked, so an UNBLOCK
+     * that sees it blocked always reaches it.
+     */
+    public void block(List<byte[]> keys, boolean onNoKey, java.util.function.Consumer<Boolean> unblocker) {
+        this.unblocker = unblocker;
+        this.blockedOnNoKey = onNoKey;
+        this.blockedOn = keys;
+    }
+
+    /** Whether the client's blocking command also ends when its key is deleted (XREADGROUP). */
+    public boolean blockedOnNoKey() {
+        return blockedOnNoKey;
+    }
+
+    public void unblocked() {
+        this.blockedOn = null;
+        this.unblocker = null;
+    }
+
+    /**
+     * CLIENT UNBLOCK: ends the client's blocking command, as a timeout or ({@code withError}) with an
+     * error. Returns whether it was blocked.
+     */
+    public boolean unblock(boolean withError) {
+        var hook = unblocker;
+        if (hook == null) {
+            return false;
+        }
+        hook.accept(withError);
+        return true;
     }
 
     /** Whether the client has subscriptions (set by the Pub/Sub commands). */

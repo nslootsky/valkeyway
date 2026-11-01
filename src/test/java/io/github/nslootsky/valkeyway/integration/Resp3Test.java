@@ -115,7 +115,7 @@ class Resp3Test extends IntegrationTestBase {
 
             Verbatim info = assertInstanceOf(Verbatim.class, c.call("INFO", "server"));
             assertEquals("txt", info.format());
-            assertTrue(info.text().contains("role:master"), info.text());
+            assertTrue(info.text().contains("server_mode:standalone"), info.text());
 
             Verbatim list = assertInstanceOf(Verbatim.class, c.call("CLIENT", "LIST", "ID", c.call("CLIENT", "ID").toString()));
             assertTrue(list.text().contains(" resp=3 "), list.text());

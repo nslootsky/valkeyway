@@ -42,6 +42,8 @@ final class MovableKeys {
                     }
                     yield keys;
                 }
+                // MSETEX numkeys key value [key value ...] [options]
+                case "msetex" -> pairsAfterNumkeys(args);
                 // XREAD [COUNT n] [BLOCK ms] STREAMS key... id...
                 case "xread", "xreadgroup" -> streams(args);
                 // SORT key [... STORE destination]
@@ -65,6 +67,21 @@ final class MovableKeys {
         List<byte[]> keys = new ArrayList<>(numkeys);
         for (int i = index + 1; i <= index + numkeys; i++) {
             keys.add(args[i]);
+        }
+        return keys;
+    }
+
+    private static List<byte[]> pairsAfterNumkeys(byte[][] args) {
+        if (args.length < 2) {
+            return null;
+        }
+        int numkeys = Integer.parseInt(ascii(args[1]));
+        if (numkeys < 1 || 2 + 2L * numkeys > args.length) { // each key needs its value
+            return null;
+        }
+        List<byte[]> keys = new ArrayList<>(numkeys);
+        for (int i = 0; i < numkeys; i++) {
+            keys.add(args[2 + 2 * i]);
         }
         return keys;
     }
