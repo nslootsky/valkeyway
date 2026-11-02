@@ -11,7 +11,7 @@ docker run -d --name valkeyway -p 6379:6379 -p 6380:6380 \
 java -jar valkeyway.jar --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 ```
 
-Clients connect on port 6379. The management port, 6380, serves health checks and metrics. Settings are described in [CONFIGURATION.md](CONFIGURATION.md), and passwords and TLS in [SECURITY.md](SECURITY.md).
+Clients connect on port 6379. The management port, 6380, serves health checks and metrics. Settings are described in [CONFIGURATION.md](CONFIGURATION.md), and passwords and TLS in [AUTH_AND_TLS.md](AUTH_AND_TLS.md).
 
 The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
 

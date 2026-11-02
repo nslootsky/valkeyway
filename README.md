@@ -49,18 +49,22 @@ proxy:
     - "node2:7001"
 ```
 
-The full reference is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), and passwords and TLS are in [docs/SECURITY.md](docs/SECURITY.md).
+The full reference is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), and passwords and TLS are in [docs/AUTH_AND_TLS.md](docs/AUTH_AND_TLS.md).
 
 ## Documentation
 
 | Document | What's in it |
 |---|---|
 | [Configuration](docs/CONFIGURATION.md) | Every setting, seed nodes and DNS, tuning |
-| [Security](docs/SECURITY.md) | Client passwords, TLS for clients and to the cluster |
+| [Authentication and TLS](docs/AUTH_AND_TLS.md) | Client passwords, TLS for clients and to the cluster |
 | [Operations](docs/OPERATIONS.md) | Running, health and metrics, what clients see during cluster changes |
 | [Compatibility](docs/COMPATIBILITY.md) | How commands are handled, differences from a standalone server |
 | [Architecture](docs/ARCHITECTURE.md) | How the proxy works, and links to its design notes |
 | [Development](docs/DEVELOPMENT.md) | Building, testing, running locally |
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Report security vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

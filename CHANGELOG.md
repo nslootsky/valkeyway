@@ -32,7 +32,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Seed DNS names** are re-resolved at topology checks (`proxy.glide.refresh-topology-from-seeds`), so a re-pointed name moves the proxy to another cluster.
 - **Topology changes** under live traffic are tested: migrations, new shards, failovers, and dead or hung primaries.
 - **Release artifacts:** a GitHub release with the jar, and a multi-architecture image on the GitHub Container Registry.
-- **Docs:** [configuration](docs/CONFIGURATION.md), [security](docs/SECURITY.md), [operations](docs/OPERATIONS.md), [compatibility](docs/COMPATIBILITY.md) and [architecture](docs/ARCHITECTURE.md). There's also a [catalog of the Glide and Valkey behaviors the proxy relies on](docs/UPSTREAM_ASSUMPTIONS.md).
+- **Docs:** [configuration](docs/CONFIGURATION.md), [authentication and TLS](docs/AUTH_AND_TLS.md), [operations](docs/OPERATIONS.md), [compatibility](docs/COMPATIBILITY.md) and [architecture](docs/ARCHITECTURE.md). There's also a [catalog of the Glide and Valkey behaviors the proxy relies on](docs/UPSTREAM_ASSUMPTIONS.md).
 
 ### Changed
 
@@ -73,7 +73,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Startup logging:** the proxy logs whether authentication is on, and warns when it's off on a non-local address, or when TLS settings won't take effect.
 - **Metrics:** `proxy.auth.failures` counts wrong passwords.
 - **Certificate rotation** waits until the files have stayed unchanged for one check.
-- **Hardening guidance** in [docs/SECURITY.md](docs/SECURITY.md#hardening), including a backend ACL user without `@admin`.
+- **Hardening guidance** in [docs/AUTH_AND_TLS.md](docs/AUTH_AND_TLS.md#hardening), including a backend ACL user without `@admin`.
 
 ## [0.1.0] - 2026-07-30
 
