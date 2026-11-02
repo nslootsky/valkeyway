@@ -12,6 +12,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **RESP3:** clients that send `HELLO 3` now get RESP3 replies. In 0.1.0, `HELLO 3` was answered with protocol 2.
 - **Node administration commands are refused by default:** SHUTDOWN, REPLICAOF, FAILOVER, DEBUG, CONFIG SET, ACL SETUSER, CLUSTER MEET and similar commands would reach whichever node Glide picks. Set `proxy.node-admin-commands: forward` for the old behavior.
 - **Connection commands are answered by the proxy:** CLIENT, RESET, AUTH and READONLY/READWRITE. Forwarded, they acted on backend connections that every client shares.
+- **ROLE** answers as a primary without replicas, like INFO. Forwarded, it described whichever node got it, possibly a replica, and Lettuce's `MasterReplica` then refused writes.
 - **PUBLISH** returns the number of proxy clients that receive the message.
 - **Credentials are hidden:** CONFIG GET redacts the values of password settings, and ACL LIST and ACL GETUSER are refused unless `proxy.node-admin-commands: forward`.
 - **`proxy.connect-timeout-ms` is now `proxy.request-timeout-ms`.** The old name still works, with a deprecation warning.
@@ -30,7 +31,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **INFO** as a standalone server answers it: the proxy's own clients, and stats and keyspace summed over the cluster.
 - **Real PROXY commands:** STATS, CLIENTINFO and CONFIG GET.
 - **Seed DNS names** are re-resolved at topology checks (`proxy.glide.refresh-topology-from-seeds`), so a re-pointed name moves the proxy to another cluster.
-- **Reading from replicas** (`proxy.replica-reads.*`): for connections that send `READONLY`, or for all, with Glide's read strategies including availability-zone affinity. Off by default. See [configuration](docs/CONFIGURATION.md#reading-from-replicas).
+- **Reading from replicas** (`proxy.read-from`, `proxy.client-az`): Glide's read strategies, including availability-zone affinity. Off by default (`primary`). See [configuration](docs/CONFIGURATION.md#reading-from-replicas).
 - **Modules:** JSON, Bloom filters and vector search work through the proxy, tested against `valkey-bundle` nodes. Search needs its coordinator mode, and its replies (`FT.SEARCH`, `FT.AGGREGATE`, `FT.INFO`, `FT._LIST`), which Glide reshapes, are rebuilt to the module's shapes; see [compatibility](docs/COMPATIBILITY.md#modules).
 - **Topology changes** under live traffic are tested: migrations, new shards, failovers, and dead or hung primaries.
 - **Release artifacts:** a GitHub release with the jar, and a multi-architecture image on the GitHub Container Registry.

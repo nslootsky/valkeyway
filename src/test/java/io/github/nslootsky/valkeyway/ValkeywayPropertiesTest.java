@@ -28,28 +28,28 @@ class ValkeywayPropertiesTest {
     }
 
     @Test
-    void replicaReadsAreOffByDefault() {
-        ValkeywayProperties.ReplicaReads reads = bind(Map.of()).replicaReads();
-        assertEquals(ValkeywayProperties.ReplicaConnections.NONE, reads.connections());
-        assertEquals(ValkeywayProperties.ReplicaReadFrom.PREFER_REPLICA, reads.readFrom());
+    void readsGoToPrimariesByDefault() {
+        ValkeywayProperties props = bind(Map.of());
+        assertEquals(ValkeywayProperties.ReadFromMode.PRIMARY, props.readFrom());
+        assertFalse(props.readFrom().readsFromReplicas());
+        assertNull(props.clientAz());
     }
 
     @Test
-    void replicaReadSettingsBind() {
-        ValkeywayProperties.ReplicaReads reads = bind(Map.of("proxy.replica-reads.connections", "readonly",
-                "proxy.replica-reads.read-from", "az-affinity", "proxy.replica-reads.client-az", "us-east-1a")).replicaReads();
-        assertEquals(ValkeywayProperties.ReplicaConnections.READONLY, reads.connections());
-        assertEquals(ValkeywayProperties.ReplicaReadFrom.AZ_AFFINITY, reads.readFrom());
-        assertEquals("us-east-1a", reads.clientAz());
+    void readFromSettingsBind() {
+        ValkeywayProperties props = bind(Map.of("proxy.read-from", "az-affinity", "proxy.client-az", "us-east-1a"));
+        assertEquals(ValkeywayProperties.ReadFromMode.AZ_AFFINITY, props.readFrom());
+        assertTrue(props.readFrom().readsFromReplicas());
+        assertEquals("us-east-1a", props.clientAz());
+        assertEquals(ValkeywayProperties.ReadFromMode.PREFER_REPLICA,
+                bind(Map.of("proxy.read-from", "prefer-replica")).readFrom());
     }
 
     @Test
     void azAffinityNeedsTheProxysZone() {
-        Exception e = assertThrows(Exception.class, () -> bind(Map.of("proxy.replica-reads.connections", "all",
-                "proxy.replica-reads.read-from", "az-affinity")));
-        assertTrue(rootMessage(e).contains("proxy.replica-reads.client-az"), rootMessage(e));
-        // Not needed while no connection reads from replicas.
-        assertDoesNotThrow(() -> bind(Map.of("proxy.replica-reads.read-from", "az-affinity")));
+        Exception e = assertThrows(Exception.class, () -> bind(Map.of("proxy.read-from", "az-affinity")));
+        assertTrue(rootMessage(e).contains("proxy.client-az"), rootMessage(e));
+        assertThrows(Exception.class, () -> bind(Map.of("proxy.read-from", "az-affinity-all-nodes", "proxy.client-az", " ")));
     }
 
     private static String rootMessage(Throwable e) {

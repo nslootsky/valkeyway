@@ -316,9 +316,6 @@ public class ClientCommand implements CommandHandler {
         if (c.blocked()) {
             flags.append('b');
         }
-        if (c.readOnly()) {
-            flags.append('r');
-        }
         if (flags.isEmpty()) {
             flags.append('N');
         }

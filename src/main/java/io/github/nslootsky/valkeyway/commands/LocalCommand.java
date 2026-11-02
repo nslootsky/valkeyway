@@ -18,25 +18,24 @@ public final class LocalCommand implements InlineCommandHandler {
     private final Reply reply;
     private final InTransaction inTransaction;
 
-    private final Boolean readOnly;
-
-    private LocalCommand(Reply reply, InTransaction inTransaction, Boolean readOnly) {
+    private LocalCommand(Reply reply, InTransaction inTransaction) {
         this.reply = reply;
         this.inTransaction = inTransaction;
-        this.readOnly = readOnly;
     }
 
     /**
-     * READONLY (true) or READWRITE (false): whether this connection's reads may go to replicas,
-     * which they do when {@code proxy.replica-reads.connections} is readonly. Rejected inside MULTI.
+     * Answered with a fixed reply. READONLY and READWRITE are accepted and ignored: which nodes serve
+     * reads is {@code proxy.read-from}'s to decide. ROLE answers as a primary without replicas, like
+     * INFO replication: forwarded, it would describe whichever node got it, maybe a replica. Inside
+     * MULTI they're rejected, since queued they would go to a backend node inside EXEC.
      */
-    public static LocalCommand readOnly(boolean readOnly) {
-        return new LocalCommand(Reply.OK, InTransaction.REJECT, readOnly);
+    public static LocalCommand answer(Reply reply) {
+        return new LocalCommand(reply, InTransaction.REJECT);
     }
 
     /** Rejected: the proxy can't offer it (MONITOR, Pub/Sub subscriptions). */
     public static LocalCommand unsupported(String name, String why) {
-        return new LocalCommand(Reply.error("ERR " + name + " is not supported by this proxy" + why), InTransaction.REJECT, null);
+        return new LocalCommand(Reply.error("ERR " + name + " is not supported by this proxy" + why), InTransaction.REJECT);
     }
 
     @Override
@@ -46,9 +45,6 @@ public final class LocalCommand implements InlineCommandHandler {
 
     @Override
     public Reply execute(Request request) {
-        if (readOnly != null) {
-            request.connection().readOnly(readOnly);
-        }
         return reply;
     }
 }

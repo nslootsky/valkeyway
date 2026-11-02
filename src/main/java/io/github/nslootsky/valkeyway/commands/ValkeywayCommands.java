@@ -82,8 +82,10 @@ public final class ValkeywayCommands {
                 .register("acl", new AclCommand(catchAll))
                 .register("config", new ConfigCommand(catchAll))
                 .register("ft._list", new SearchListCommand(catchAll))
-                .register("readonly", LocalCommand.readOnly(true))
-                .register("readwrite", LocalCommand.readOnly(false))
+                .register("readonly", LocalCommand.answer(Reply.OK))
+                .register("readwrite", LocalCommand.answer(Reply.OK))
+                // A primary with no replicas, at replication offset 0, as INFO replication reports.
+                .register("role", LocalCommand.answer(Reply.array(Reply.bulk("master"), Reply.integer(0), Reply.array())))
                 .register("monitor", LocalCommand.unsupported("MONITOR", ""));
         // Subscriptions go through the shared Pub/Sub hub, never over the backend connections.
         for (Kind kind : Kind.values()) {
