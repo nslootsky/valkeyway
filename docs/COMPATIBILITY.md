@@ -37,6 +37,16 @@ Through the proxy, these would reach whichever node Glide picks, so they're refu
 
 Their read-only counterparts work, such as CONFIG GET, ACL WHOAMI and CLUSTER KEYSLOT. Run administration against the nodes directly, or set `forward` if you know where they'll land. This guards against mistakes, not malice: see [AUTH_AND_TLS.md](AUTH_AND_TLS.md#hardening).
 
+### Modules
+
+Module commands go to the cluster like any other: Glide routes them by their first argument, which for JSON (`JSON.*`) and Bloom filters (`BF.*`) is the key, and for search (`FT.*`) is the index name. They're tested against `valkey-bundle` nodes, with search replies compared to a node's.
+- **Vector and full-text search need the search module's coordinator mode** (`loadmodule libsearch.so --use-coordinator`). Without it, each node indexes only its own keys, and a query through the proxy silently searches one node's share of the data. Any cluster client sees the same.
+- **`FT.INFO`** reports the counts of the node it reaches. Use `FT.INFO <index> PRIMARY` for the totals over all primaries.
+- **`FT._LIST`** lists each index once. Glide asks every primary, and in coordinator mode they all know every index.
+- **Search replies** have the module's shapes: Glide reshapes `FT.SEARCH`, `FT.AGGREGATE` and `FT.INFO` replies, and the proxy rebuilds them. Two details differ: simple strings in them arrive as bulk strings, and `FT.AGGREGATE`'s leading count is the number of rows returned (Glide drops the module's own count, which has been the same in our tests).
+- **`FT.SEARCH ... WITHSORTKEYS` fails** with a conversion error from Glide. The search module ignores the option, so leave it out.
+- **Search queries** (`FT.SEARCH`, `FT.AGGREGATE`, `FT.PROFILE`) aren't batched with other clients' commands, so a slow query delays only its own connection.
+
 ## Differences from a standalone server
 
 ### Keys in different slots

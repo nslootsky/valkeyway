@@ -36,7 +36,20 @@ public final class MapReplyCommands {
             "lcs",                                      // IDX -> map
             "lmpop", "blmpop");                         // map of key to elements
 
+    /**
+     * Keyless commands with a top-level map reply that Glide routes by their first argument: routed
+     * to that argument's slot explicitly, as Glide would, so the reply isn't misread. (FT.INFO's
+     * first argument is an index name; Glide makes its reply a map.) [upstream:G16]
+     */
+    private static final Set<String> BY_FIRST_ARGUMENT = Set.of("ft.info");
+
     private MapReplyCommands() {}
+
+    /** Whether {@code args} is routed by its first argument and its reply can be a top-level map. */
+    public static boolean routedByFirstArgument(byte[][] args) {
+        return args.length >= 2 && args[0].length == 7 && (args[0][0] | 0x20) == 'f'
+                && BY_FIRST_ARGUMENT.contains(new String(args[0], StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT));
+    }
 
     /** Whether the reply to {@code args} (args[0] = command name) can be a top-level map. */
     public static boolean mayReturnMap(byte[][] args) {

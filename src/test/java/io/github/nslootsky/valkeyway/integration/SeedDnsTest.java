@@ -43,7 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SeedDnsTest {
 
-    private static final DockerImageName VALKEY = DockerImageName.parse("valkey/valkey:9.1.3-alpine");
+    private static final DockerImageName VALKEY = ValkeyClusterTestContainer.IMAGE;
     private static final String SEED = "valkey-endpoint";
 
     private static Network network;

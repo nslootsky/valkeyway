@@ -8,7 +8,7 @@ grep -rn "upstream:G4" src
 
 `UpstreamAssumptionsTest` checks that every ID listed here is tagged somewhere in `src/main`, and that every tag names a listed ID.
 
-**Last verified against:** valkey-glide 2.5.3 (Java), Valkey 9.1.3.
+**Last verified against:** valkey-glide 2.5.3 (Java), Valkey 9.1.3 (as valkey-bundle 9.1.4, with search 1.2.1, JSON 1.0.3 and Bloom 1.0.1). Bundle versions aren't Valkey versions: check with `valkey-server --version` in the image.
 
 ## When upgrading Glide or Valkey
 
@@ -32,7 +32,9 @@ Glide's Java client has typed exceptions only for timeouts, a closed client, EXE
 
 We strip the Java class prefix, recognize these forms, and send `CODE detail`, so clients can dispatch on the code.
 
-- **Code:** `ServerErrors` (`GLIDE_KIND_ERROR`, `BARE_KIND_ERROR`, `CODE_COLON_ERROR`, `GLIDE_KIND_CODES`).
+Codes Glide doesn't know arrive as `Code: detail` (`types.rs`, `ErrorRepr::ExtensionError`), all-caps or not (the search module's `Index`). Glide's own kind names, and Rust's I/O error kinds (`BrokenPipe: ...` when a connection drops), are never server codes.
+
+- **Code:** `ServerErrors` (`GLIDE_KIND_ERROR`, `BARE_KIND_ERROR`, `CODE_COLON_ERROR`, `EXTENSION_ERROR`, `GLIDE_KIND_CODES`, `GLIDE_KINDS`).
 - **Live test:** `RespFidelityTest.errorsUseServerErrorCodes`. Captured strings are in `ServerErrorsTest`.
 
 ### G2: Outage failures arrive as text, and some leak Glide internals
@@ -172,6 +174,16 @@ For a command without a rule in its routing table, Glide takes the first argumen
 - **Code:** `GlideRouting`, `Backend.sendOnce`, `CatchAllCommand.canRunAsync`.
 - **Live test:** `MsetexRoutingTest`.
 
+### G16: Glide's handling of the search module's commands
+
+Glide has rules for the search module (`FT.*`) that change its replies:
+- **Routing:** `FT._LIST` goes to all primaries, with the replies joined (`redis-rs/cluster_routing.rs`: `RouteBy::AllPrimaries`, `ResponsePolicy::CombineArrays`). With search in coordinator mode (V12) every primary knows every index, so each name came back once per primary; the proxy removes the repeats. Other `FT.*` commands are routed by the index name (G15).
+- **Reshaped replies** (`glide-core/src/client/value_conversion.rs`, `expected_type_for_cmd`): `FT.SEARCH` becomes `[total, {key: {field: value}}]` (NOCONTENT's keys get empty maps), `FT.AGGREGATE` loses its leading count and its rows become maps, and `FT.INFO` becomes a map, which at the top level Glide's `ClusterValue` would misread (G5) unless routed explicitly. The proxy routes `FT.INFO` to its index name's slot and rebuilds all three. `FT.SEARCH ... WITHSORTKEYS` expects a reply the module doesn't send, so Glide fails it.
+- **Errors:** the module's error code `Index` (`Index with name 'x' not found`) arrives as `Index: with name ...`, Glide's form for codes it doesn't know (G1).
+
+- **Code:** `SearchListCommand`, `ReplyShapes.searchResults`, `aggregateRows`, `MapReplyCommands.routedByFirstArgument`, `ServerErrors.EXTENSION_ERROR`.
+- **Live test:** `ModulesTest` (search replies compared with a node's, single, pipelined and RESP3).
+
 ---
 
 ## Valkey
@@ -279,3 +291,10 @@ Inline commands are split by `sdssplitargs` (`sdsparsearg` in sds.c). Since Valk
 
 - **Code:** `InlineArgs`, `RespDecoder.checkLf`.
 - **Live test:** `RespDecoderTest.quotedAndUnquotedPartsJoinUp` and `requiresLfAfterEveryCr` (Valkey's own cases), `RespFidelityTest.inlineQuotingMatchesAServer` (compared with a node).
+
+### V12: valkey-search searches across shards only in coordinator mode
+
+The search module indexes and queries every shard's keys only when loaded with `--use-coordinator`: `FT.CREATE` then reaches every primary, and `FT.SEARCH` on any node fans out to all shards. Without it, an index lives on the node that created it, covers that node's keys, and queries answer from that node alone, with no error. `FT.INFO` reports the node it reaches; `FT.INFO <index> PRIMARY` sums over all primaries.
+
+- **Code:** `SearchListCommand` (correct in both modes).
+- **Live test:** `ModulesTest.vectorSearchCoversEveryShard`, against valkey-bundle 9.1.4 (search 1.2.1).

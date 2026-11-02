@@ -8,6 +8,7 @@ package io.github.nslootsky.valkeyway.integration;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.DockerImageName;
 
@@ -26,7 +27,24 @@ import java.util.List;
  */
 public class ValkeyClusterTestContainer implements AutoCloseable {
 
-    private static final DockerImageName VALKEY_IMAGE = DockerImageName.parse("valkey/valkey:9.1.3-alpine");
+    /**
+     * Valkey with the JSON, Bloom and search modules (and LDAP, not loaded here): the one Valkey image
+     * the tests use, so CI pulls a single image. The bundle has its own version numbers: bundle 9.1.4
+     * is Valkey 9.1.3 (bundle 9.1.3 is Valkey 9.1.2).
+     */
+    static final DockerImageName IMAGE = DockerImageName.parse("valkey/valkey-bundle:9.1.4-alpine");
+    /** The Valkey version in {@link #IMAGE}, checked when a cluster starts. */
+    static final String VALKEY_VERSION = "9.1.3";
+    private static final String MODULES_CONF = "/valkey-modules.conf";
+    /**
+     * Every node loads the modules, as a valkey-bundle server does. Their arguments can't be given on
+     * the command line, where they'd read as server options, hence the configuration file.
+     */
+    private static final String MODULES = """
+            loadmodule /usr/lib/valkey/libjson.so
+            loadmodule /usr/lib/valkey/libvalkey_bloom.so
+            loadmodule /usr/lib/valkey/libsearch.so%s
+            """;
 
     private final List<GenericContainer<?>> nodes = new ArrayList<>();
     private final List<String> members = new ArrayList<>();
@@ -50,6 +68,21 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
      */
     public ValkeyClusterTestContainer(int primaries, int replicasPerPrimary, int spareNodes, int basePort,
                                       int nodeTimeoutMs, String extraArgs, TestCertificates tls) {
+        this(primaries, replicasPerPrimary, spareNodes, basePort, nodeTimeoutMs, extraArgs, tls, false);
+    }
+
+    /**
+     * A cluster with search in coordinator mode, the only mode in which an index covers every shard's
+     * keys and a query searches them all. The coordinator listens on its node's port + 20294: keep
+     * {@code basePort} under 12000, so that lands below Linux's ephemeral range (as the bus port,
+     * port - 6000, needs it above 7024).
+     */
+    public static ValkeyClusterTestContainer withSearchCoordinator(int primaries, int basePort) {
+        return new ValkeyClusterTestContainer(primaries, 0, 0, basePort, 5000, "", null, true);
+    }
+
+    private ValkeyClusterTestContainer(int primaries, int replicasPerPrimary, int spareNodes, int basePort,
+                                       int nodeTimeoutMs, String extraArgs, TestCertificates tls, boolean coordinator) {
         this.replicasPerPrimary = replicasPerPrimary;
         int memberCount = primaries * (1 + replicasPerPrimary);
         for (int i = 0; i < memberCount + spareNodes; i++) {
@@ -59,9 +92,9 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
             String tlsArgs = tls == null ? "" : String.format(
                     " --tls-port %d --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key"
                             + " --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no --tls-cluster yes", tlsPort(port));
-            GenericContainer<?> node = new GenericContainer<>(VALKEY_IMAGE)
+            GenericContainer<?> node = new GenericContainer<>(IMAGE)
                     .withNetworkMode("host")
-                    .withCommand(String.format(
+                    .withCommand(MODULES_CONF + " " + String.format(
                             "--port %d --cluster-port %d --cluster-enabled yes --cluster-config-file nodes.conf " +
                                     "--cluster-node-timeout %d --appendonly yes --daemonize no --bind 0.0.0.0 " +
                                     "--cluster-databases 16 %s",
@@ -70,6 +103,10 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
                     // With host networking there are no mapped ports to probe; wait for the server itself.
                     .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*", 1))
                     .withStartupTimeout(Duration.ofMinutes(2));
+            // Started directly, not through the image's script, which would also load LDAP.
+            node.withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint("valkey-server"))
+                    .withCopyToContainer(Transferable.of(MODULES.formatted(coordinator ? " --use-coordinator" : "")),
+                            MODULES_CONF);
             if (tls != null) {
                 for (String file : List.of("ca.crt", "server.crt", "server.key")) {
                     node.withCopyFileToContainer(MountableFile.forHostPath(tls.dir().resolve(file), 0644), "/tls/" + file);
@@ -112,6 +149,20 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
             throw new RuntimeException("Failed to create Valkey cluster: " + result.getStdout() + "\n" + result.getStderr());
         }
         awaitHealthy(Duration.ofSeconds(60));
+        checkVersion();
+    }
+
+    /** Fails if the image runs another Valkey version than the tests and docs assume. */
+    private void checkVersion() {
+        String[] hostPort = members.getFirst().split(":");
+        try (RawRespClient client = new RawRespClient(hostPort[0], Integer.parseInt(hostPort[1]))) {
+            String info = (String) client.call("INFO", "server");
+            if (!info.contains("valkey_version:" + VALKEY_VERSION + "\r\n")) {
+                throw new IllegalStateException(IMAGE + " doesn't run Valkey " + VALKEY_VERSION + ":\n" + info);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** Waits until every member reports cluster_state:ok and every replica has finished its initial sync. */

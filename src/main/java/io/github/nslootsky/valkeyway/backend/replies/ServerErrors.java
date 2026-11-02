@@ -43,6 +43,31 @@ public final class ServerErrors {
     /** Server error codes Glide passes through as "CODE: detail" (WRONGTYPE, BUSYGROUP, NOGROUP, ...). */
     private static final Pattern CODE_COLON_ERROR = Pattern.compile("^([A-Z][A-Z0-9_]+): (.*)$", Pattern.DOTALL);
 
+    /**
+     * Any other "Code: detail" is a server error code Glide doesn't know (an ExtensionError), such as
+     * the search module's "Index", unless the code is one of Glide's own error kinds or a Rust I/O
+     * error kind ("BrokenPipe: ..." when a node's connection drops).
+     */
+    private static final Pattern EXTENSION_ERROR = Pattern.compile("^([A-Za-z][A-Za-z0-9_]*): (.*)$", Pattern.DOTALL);
+
+    /** Glide's error kind names (redis-rs {@code types.rs}, {@code ErrorKind}) and Rust's I/O ones: never server codes. */
+    private static final Set<String> GLIDE_KINDS = Set.of("ResponseError", "ParseError", "AuthenticationFailed",
+            "PermissionDenied", "TypeError", "ExecAbortError", "BusyLoadingError", "NoScriptError",
+            "InvalidClientConfig", "Moved", "Ask", "TryAgain", "ClusterDown", "CrossSlot", "MasterDown", "IoError",
+            "FatalSendError", "FatalReceiveError", "ClientError", "CircuitBreakerOpen", "ExtensionError", "ReadOnly",
+            "MasterNameNotFoundBySentinel", "NoValidReplicasFoundBySentinel", "EmptySentinelList", "NotBusy",
+            "AllConnectionsUnavailable", "ConnectionNotFoundForRoute", "RESP", "NotAllSlotsCovered",
+            "UserOperationError", "ProtocolDesync",
+            // Rust's std::io::ErrorKind
+            "NotFound", "ConnectionRefused", "ConnectionReset", "HostUnreachable", "NetworkUnreachable",
+            "ConnectionAborted", "NotConnected", "AddrInUse", "AddrNotAvailable", "NetworkDown", "BrokenPipe",
+            "AlreadyExists", "WouldBlock", "NotADirectory", "IsADirectory", "DirectoryNotEmpty",
+            "ReadOnlyFilesystem", "FilesystemLoop", "StaleNetworkFileHandle", "InvalidInput", "InvalidData",
+            "TimedOut", "WriteZero", "StorageFull", "NotSeekable", "FilesystemQuotaExceeded", "QuotaExceeded",
+            "FileTooLarge", "ResourceBusy", "ExecutableFileBusy", "Deadlock", "CrossesDevices", "TooManyLinks",
+            "InvalidFilename", "ArgumentListTooLong", "Interrupted", "Unsupported", "UnexpectedEof",
+            "OutOfMemory", "InProgress", "Other", "Uncategorized");
+
     /** Already in wire format: "CODE detail". */
     private static final Pattern CODE_SPACE_ERROR = Pattern.compile("^[A-Z][A-Z0-9_]{2,} .*", Pattern.DOTALL);
 
@@ -195,6 +220,10 @@ public final class ServerErrors {
         Matcher code = CODE_COLON_ERROR.matcher(m);
         if (code.matches()) {
             return withCode(code.group(1), code.group(2));
+        }
+        Matcher extension = EXTENSION_ERROR.matcher(m);
+        if (extension.matches() && !GLIDE_KINDS.contains(extension.group(1))) {
+            return withCode(extension.group(1), extension.group(2));
         }
         if (CODE_SPACE_ERROR.matcher(m).matches()) {
             return m;
