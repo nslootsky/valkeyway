@@ -22,6 +22,8 @@ import java.util.Map;
  *        least 500)
  * @param connectTimeoutMs the old name of {@code request-timeout-ms}, still accepted; reads back as
  *        the effective request timeout
+ * @param readFrom which nodes serve reads: primary (the default) or a replica strategy; see {@link ReadFromMode}
+ * @param clientAz this proxy's availability zone, required by the az-affinity read-from modes
  */
 @SuppressWarnings("deprecation") // connectTimeoutMs, read only to honor the old name
 @ConfigurationProperties(prefix = "proxy")
@@ -39,7 +41,8 @@ public record ValkeywayProperties(
     Auth auth,
     Tls tls,
     Backend backend,
-    ReplicaReads replicaReads
+    ReadFromMode readFrom,
+    String clientAz
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
@@ -62,39 +65,31 @@ public record ValkeywayProperties(
         if (glide == null) glide = new Glide(0, null, null, 0);
         if (transactions == null) transactions = new Transactions(null, null);
         if (nodeAdminCommands == null) nodeAdminCommands = NodeAdmin.REJECT;
-        if (replicaReads == null) replicaReads = new ReplicaReads(null, null, null);
-    }
-
-    /**
-     * Reads from replicas, which can return data a moment older than the primary's (replication is
-     * asynchronous), even data a client has just overwritten. Prefix: proxy.replica-reads.*
-     *
-     * @param connections which client connections read from replicas: none (the default), readonly
-     *        (those that send READONLY, until READWRITE or RESET), or all
-     * @param readFrom    how reads pick a node, as Glide's ReadFrom (default prefer-replica)
-     * @param clientAz    this proxy's availability zone, required by the az-affinity modes; nodes
-     *                    announce theirs with Valkey's {@code availability-zone} setting
-     */
-    public record ReplicaReads(ReplicaConnections connections, ReplicaReadFrom readFrom, String clientAz) {
-        public ReplicaReads {
-            if (connections == null) connections = ReplicaConnections.NONE;
-            if (readFrom == null) readFrom = ReplicaReadFrom.PREFER_REPLICA;
-            if (clientAz != null && clientAz.isBlank()) clientAz = null;
-            if (connections != ReplicaConnections.NONE && readFrom.needsClientAz() && clientAz == null) {
-                throw new IllegalArgumentException("proxy.replica-reads.read-from=" + readFrom.name().toLowerCase(Locale.ROOT)
-                        .replace('_', '-') + " needs proxy.replica-reads.client-az");
-            }
+        if (readFrom == null) readFrom = ReadFromMode.PRIMARY;
+        if (clientAz != null && clientAz.isBlank()) clientAz = null;
+        if (readFrom.needsClientAz() && clientAz == null) {
+            throw new IllegalArgumentException("proxy.read-from=" + readFrom.name().toLowerCase(Locale.ROOT)
+                    .replace('_', '-') + " needs proxy.client-az");
         }
     }
 
-    public enum ReplicaConnections { NONE, READONLY, ALL }
-
-    /** Glide's ReadFrom strategies that read from replicas. */
-    public enum ReplicaReadFrom {
-        PREFER_REPLICA, AZ_AFFINITY, AZ_AFFINITY_REPLICAS_AND_PRIMARY, ALL_NODES, AZ_AFFINITY_ALL_NODES;
+    /**
+     * Which nodes serve reads (proxy.read-from), as Glide's ReadFrom: primary (the default), or a
+     * strategy that reads from replicas. Replicas can return data a moment older than the primary's
+     * (replication is asynchronous), even data a client has just overwritten. The az-affinity modes
+     * need proxy.client-az, this proxy's availability zone; nodes announce theirs with Valkey's
+     * {@code availability-zone} setting.
+     */
+    public enum ReadFromMode {
+        PRIMARY, PREFER_REPLICA, AZ_AFFINITY, AZ_AFFINITY_REPLICAS_AND_PRIMARY, ALL_NODES, AZ_AFFINITY_ALL_NODES;
 
         boolean needsClientAz() {
             return name().startsWith("AZ_");
+        }
+
+        /** Whether reads go to replicas (every mode but primary). */
+        public boolean readsFromReplicas() {
+            return this != PRIMARY;
         }
     }
 

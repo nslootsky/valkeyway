@@ -54,9 +54,10 @@ public class BackendClients {
     private static final long CREATE_TIMEOUT_SECONDS = 10;
 
     private final Map<Integer, GlideClusterClient> clients = new ConcurrentHashMap<>();
-    /** The same, reading from replicas: for connections that do ({@code proxy.replica-reads}). */
+    /** The same, reading as {@code proxy.read-from} says, when that reads from replicas. */
     private final Map<Integer, GlideClusterClient> replicaClients = new ConcurrentHashMap<>();
-    private final ValkeywayProperties.ReplicaReads replicaReads;
+    private final ValkeywayProperties.ReadFromMode readFrom;
+    private final String clientAz;
     private final List<String> clusterNodes;
     private final int requestTimeout;
     private final int inflightRequestsLimit;
@@ -73,7 +74,8 @@ public class BackendClients {
         this.inflightRequestsLimit = props.glide().inflightRequestsLimit();
         this.refreshTopologyFromSeeds = props.glide().refreshTopologyFromSeeds();
         this.topologyCheckSeconds = props.glide().topologyCheckSeconds();
-        this.replicaReads = props.replicaReads();
+        this.readFrom = props.readFrom();
+        this.clientAz = props.clientAz();
     }
 
     private static byte[] readCaFile(ValkeywayProperties.BackendTls tls) {
@@ -151,16 +153,9 @@ public class BackendClients {
         return clients.get(db);
     }
 
-    /**
-     * Whether a connection's reads go to replicas ({@code proxy.replica-reads}), given whether it sent
-     * READONLY.
-     */
-    public boolean readsFromReplicas(boolean readOnlyConnection) {
-        return switch (replicaReads.connections()) {
-            case NONE -> false;
-            case READONLY -> readOnlyConnection;
-            case ALL -> true;
-        };
+    /** Whether reads go to replicas ({@code proxy.read-from} is not primary). */
+    public boolean readsFromReplicas() {
+        return readFrom.readsFromReplicas();
     }
 
     /** The shared client for {@code db}: the primary-reading one, or the one that reads from replicas. */
@@ -182,11 +177,11 @@ public class BackendClients {
 
     /**
      * With replica reads on, creates database 0's replica-reading client in the background, so the
-     * first READONLY reads don't wait for it. Glide connects to the replicas asynchronously and reads
+     * first reads don't wait for it. Glide connects to the replicas asynchronously and reads
      * from the primary until it has, which is correct, just not yet from a replica.
      */
     public void preloadReplicaClient() {
-        if (replicaReads.connections() == ValkeywayProperties.ReplicaConnections.NONE) {
+        if (!readsFromReplicas()) {
             return;
         }
         Thread.ofVirtual().name("replica-client-preload").start(() -> {
@@ -199,7 +194,7 @@ public class BackendClients {
     }
 
     private ReadFrom replicaReadFrom() {
-        return ReadFrom.valueOf(replicaReads.readFrom().name());
+        return ReadFrom.valueOf(readFrom.name());
     }
 
     /**
@@ -236,8 +231,8 @@ public class BackendClients {
 
     private GlideClusterClient create(int db, List<String> seeds, ReadFrom readFrom) throws Exception {
         var config = configBuilder(db, seeds).readFrom(readFrom);
-        if (readFrom != ReadFrom.PRIMARY && replicaReads.clientAz() != null) {
-            config.clientAZ(replicaReads.clientAz());
+        if (readFrom != ReadFrom.PRIMARY && clientAz != null) {
+            config.clientAZ(clientAz);
         }
         return GlideClusterClient.createClient(config.build()).get(CREATE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }

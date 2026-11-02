@@ -85,7 +85,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
         if (connection.inTransaction() || BlockingCommands.detect(args).isPresent() || nodeAdmin.check(args) != null) {
             return false;
         }
-        if (clients.getIfPresent(connection.db(), replicaReads(connection)) == null) {
+        if (clients.getIfPresent(connection.db(), replicaReads()) == null) {
             return false;
         }
         // A batch (pipeline, coalesced commands) can't route a command; Glide would misroute these. [upstream:G15]
@@ -98,7 +98,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
     @Override
     public CompletionStage<Reply> executeAsync(Request request, Executor replyExecutor) {
         int db = request.connection().db();
-        boolean replicaReads = replicaReads(request.connection());
+        boolean replicaReads = replicaReads();
         GlideClusterClient client = clients.getIfPresent(db, replicaReads);
         if (client == null) {
             // Gone since canRunAsync: create it off the network thread.
@@ -114,7 +114,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
     @Override
     public CompletionStage<List<Reply>> executeBatchAsync(List<Request> requests, Executor replyExecutor) {
         Connection connection = requests.getFirst().connection(); // a batch is one connection's pipeline
-        GlideClusterClient client = clients.getIfPresent(connection.db(), replicaReads(connection));
+        GlideClusterClient client = clients.getIfPresent(connection.db(), replicaReads());
         if (client == null) {
             return CompletableFuture.supplyAsync(() -> requests.stream().map(this::executeUnchecked).toList(), FALLBACK);
         }
@@ -148,16 +148,16 @@ public class CatchAllCommand implements AsyncCommandHandler {
             }
             return blocking.run(connection, args, keys.extractKeys(clients.getClient(connection.db()), args), spec.get());
         }
-        return backend.callAndWait(clients.getClient(connection.db(), replicaReads(connection)), args);
+        return backend.callAndWait(clients.getClient(connection.db(), replicaReads()), args);
     }
 
     /**
-     * Whether this connection's commands go through the client that reads from replicas. Only commands
-     * this handler sends on their own or in a batch do: transactions, WATCH, blocking commands and
-     * SCAN always read from primaries, so that a transaction never decides on stale data.
+     * Whether commands go through the client that reads from replicas ({@code proxy.read-from}). Only
+     * commands this handler sends on their own or in a batch do: transactions, WATCH, blocking commands
+     * and SCAN always read from primaries, so that a transaction never decides on stale data.
      */
-    private boolean replicaReads(Connection connection) {
-        return clients.readsFromReplicas(connection.readOnly());
+    private boolean replicaReads() {
+        return clients.readsFromReplicas();
     }
 
     /** Commands that can run long; coalesced with others, a timeout of theirs would fail the whole batch. */

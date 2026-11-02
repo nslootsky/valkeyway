@@ -104,8 +104,6 @@ public final class Connection {
     private volatile String libName = "";
     private volatile String libVersion = "";
     private volatile boolean noEvict;
-    /** READONLY: this client accepts reads from replicas ({@code proxy.replica-reads}). */
-    private volatile boolean readOnly;
     private volatile boolean noTouch;
 
     // Event loop only.
@@ -513,14 +511,6 @@ public final class Connection {
 
     public boolean noEvict() {
         return noEvict;
-    }
-
-    public boolean readOnly() {
-        return readOnly;
-    }
-
-    public void readOnly(boolean readOnly) {
-        this.readOnly = readOnly;
     }
 
     public void noEvict(boolean noEvict) {

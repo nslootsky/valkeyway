@@ -64,7 +64,6 @@ public class ResetCommand implements CommandHandler {
         connection.name(null);
         connection.noEvict(false);
         connection.noTouch(false);
-        connection.readOnly(false);
         connection.replyMode(Connection.ReplyMode.ON);
         connection.protocol(2);
         connection.user(users.authRequired() ? null : Users.DEFAULT);
