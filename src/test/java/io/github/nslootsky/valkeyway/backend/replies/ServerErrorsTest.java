@@ -62,6 +62,11 @@ class ServerErrorsTest {
                     + " | ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run",
             "ERR timed out | ERR backend request timed out; the command may or may not have run",
             "TRYAGAIN Multiple keys request during rehashing of slot | TRYAGAIN Multiple keys request during rehashing of slot",
+            // What clients saw during a failover in TopologyChangeTest: other nodes declare the cluster down.
+            "CLUSTERDOWN The cluster is down"
+                    + " | ERR backend unavailable: the cluster can't serve this command (The cluster is down); the command did not run",
+            "An error was signalled by the server: - ClusterDown: Hash slot not served"
+                    + " | ERR backend unavailable: the cluster can't serve this command (Hash slot not served); the command did not run",
     })
     void backendFailuresAreRewritten(String message, String expected) {
         assertEquals(expected, ServerErrors.message(message));
@@ -81,6 +86,7 @@ class ServerErrorsTest {
             "ERR BrokenPipe: Cluster: Failed to receive command response | false",
             "TRYAGAINX | false",
             "ERR backend unavailable: no connection to 127.0.0.1:7003; the command did not run | true",
+            "ERR backend unavailable: the cluster can't serve this command (The cluster is down); the command did not run | true",
             "ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run | false",
     })
     void recognisesErrorsRejectedWithoutRunning(String message, boolean expected) {
