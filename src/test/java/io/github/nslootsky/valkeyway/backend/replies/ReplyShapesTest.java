@@ -89,4 +89,62 @@ class ReplyShapesTest {
         assertSame(value, ReplyShapes.shape(args("HGETALL h"), value));
         assertSame(value, ReplyShapes.shape(args("GET k"), value));
     }
+
+    private static Map<Object, Object> map(Object... kv) {
+        Map<Object, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i < kv.length; i += 2) {
+            map.put(kv[i], kv[i + 1]);
+        }
+        return map;
+    }
+
+    @Test
+    void searchResultsBecomeKeyFieldArrays() {
+        Object glide = new Object[]{2L, map(g("doc:1"), map(g("color"), g("red"), g("n"), g("1")), g("doc:2"), map())};
+        Object[] shaped = (Object[]) ReplyShapes.shape(args("FT.SEARCH idx * RETURN 2 color n"), glide);
+        assertEquals(5, shaped.length);
+        assertEquals(2L, shaped[0]);
+        assertEquals(g("doc:1"), shaped[1]);
+        assertArrayEquals(new Object[]{g("color"), g("red"), g("n"), g("1")}, (Object[]) shaped[2]);
+        assertEquals(g("doc:2"), shaped[3]);
+        assertArrayEquals(new Object[0], (Object[]) shaped[4], "a document without fields keeps an empty list");
+    }
+
+    @Test
+    void searchWithoutContentListsKeysOnly() {
+        Object glide = new Object[]{2L, map(g("doc:1"), map(), g("doc:2"), map())};
+        assertArrayEquals(new Object[]{2L, g("doc:1"), g("doc:2")},
+                (Object[]) ReplyShapes.shape(args("FT.SEARCH idx * NOCONTENT"), glide));
+    }
+
+    @Test
+    void searchTotalsAndEmptyResultsKeepTheirShape() {
+        Object total = new Object[]{3L};
+        assertSame(total, ReplyShapes.shape(args("FT.SEARCH idx * LIMIT 0 0"), total));
+        assertArrayEquals(new Object[]{0L}, (Object[]) ReplyShapes.shape(args("FT.SEARCH idx nothing"),
+                new Object[]{0L, map()}));
+    }
+
+    @Test
+    void aggregateRowsGetTheirCountBack() {
+        Object glide = new Object[]{map(g("color"), g("red")), map(g("color"), g("blue"))};
+        Object[] shaped = (Object[]) ReplyShapes.shape(args("ft.aggregate idx * LOAD 1 @color"), glide);
+        assertEquals(2L, shaped[0]);
+        assertArrayEquals(new Object[]{g("color"), g("red")}, (Object[]) shaped[1]);
+        assertArrayEquals(new Object[]{g("color"), g("blue")}, (Object[]) shaped[2]);
+    }
+
+    @Test
+    void indexInfoIsFlattenedAtEveryLevel() {
+        Object glide = map(g("index_name"), g("idx"),
+                g("index_definition"), map(g("key_type"), g("HASH"), g("prefixes"), new Object[]{g("doc:")}),
+                g("num_docs"), 2L);
+        Object[] shaped = (Object[]) ReplyShapes.shape(args("FT.INFO idx"), glide);
+        assertEquals(6, shaped.length);
+        assertEquals(g("index_definition"), shaped[2]);
+        Object[] definition = (Object[]) shaped[3];
+        assertEquals(g("key_type"), definition[0]);
+        assertArrayEquals(new Object[]{g("doc:")}, (Object[]) definition[3]);
+        assertEquals(2L, shaped[5]);
+    }
 }

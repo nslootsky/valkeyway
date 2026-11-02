@@ -80,6 +80,7 @@ public final class ValkeywayCommands {
                 .register("auth", new AuthCommand(users, metrics::authFailed))
                 .register("acl", new AclCommand(catchAll))
                 .register("config", new ConfigCommand(catchAll))
+                .register("ft._list", new SearchListCommand(catchAll))
                 .register("readonly", LocalCommand.accept(Reply.OK))
                 .register("readwrite", LocalCommand.accept(Reply.OK))
                 .register("monitor", LocalCommand.unsupported("MONITOR", ""));

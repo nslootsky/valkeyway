@@ -151,11 +151,12 @@ public class CatchAllCommand implements AsyncCommandHandler {
 
     /** Commands that can run long; coalesced with others, a timeout of theirs would fail the whole batch. */
     private static final Set<String> LONG_RUNNING = Set.of("keys", "eval", "evalsha", "eval_ro", "evalsha_ro",
-            "fcall", "fcall_ro", "function", "script", "sort", "sort_ro");
+            "fcall", "fcall_ro", "function", "script", "sort", "sort_ro",
+            "ft.search", "ft.aggregate", "ft.profile"); // the search module's queries
 
     static boolean mayRunLong(byte[][] args) {
         byte[] name = args[0];
-        if (name.length < 4 || name.length > 10) {
+        if (name.length < 4 || name.length > 12) {
             return false;
         }
         switch (name[0] | 0x20) {

@@ -10,6 +10,7 @@ import glide.api.models.configuration.RequestRoutingConfiguration.SimpleSingleNo
 import glide.api.models.exceptions.RequestException;
 import glide.api.models.ClusterBatch;
 import glide.api.models.ClusterValue;
+import io.github.nslootsky.valkeyway.backend.routing.ClusterSlots;
 import io.github.nslootsky.valkeyway.backend.routing.CommandKeyExtractor;
 import io.github.nslootsky.valkeyway.backend.routing.MapReplyCommands;
 import io.github.nslootsky.valkeyway.backend.routing.SlotRoutes;
@@ -116,7 +117,9 @@ public final class Backend {
         // Misrouted commands never run on the network thread (see CatchAllCommand.canRunAsync), so
         // asking the server for their keys is allowed.
         int slot = misrouted ? keys.singleSlotAsking(client, args)
-                : MapReplyCommands.mayReturnMap(args) ? keys.singleSlot(client, args) : CommandKeyExtractor.NO_SLOT;
+                : MapReplyCommands.mayReturnMap(args) ? keys.singleSlot(client, args)
+                : MapReplyCommands.routedByFirstArgument(args) ? ClusterSlots.slot(args[1])
+                : CommandKeyExtractor.NO_SLOT;
         if (misrouted && slot == CommandKeyExtractor.NO_SLOT) {
             // Glide's own routing would pick a slot by the wrong argument. [upstream:G15] An
             // argument error takes precedence, as on a node.

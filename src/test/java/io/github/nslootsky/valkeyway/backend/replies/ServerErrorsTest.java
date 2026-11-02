@@ -36,6 +36,11 @@ class ServerErrorsTest {
             "An error was signalled by the server: - ExecAbortError: Transaction discarded because of previous errors."
                     + " | EXECABORT Transaction discarded because of previous errors.",
             "ResponseError: syntax error | ERR syntax error",
+            // A module's own error code (valkey-search), which Glide doesn't know.
+            "glide.api.models.exceptions.RequestException: Index: with name 'idx' not found in database 0"
+                    + " | Index with name 'idx' not found in database 0",
+            // Glide's own kinds are never taken for server codes.
+            "IoError: broken pipe | ERR IoError: broken pipe",
             "ERR invalid SCAN cursor | ERR invalid SCAN cursor",
     })
     void errorMessagesUseServerErrorCodes(String glideMessage, String expected) {
@@ -57,6 +62,8 @@ class ServerErrorsTest {
             "ERR Received connection error `Requested connection not found - ConnectionNotFoundForRoute: 127.0.0.1:27103`. Will attempt to reconnect"
                     + " | ERR backend unavailable: no connection to 127.0.0.1:27103; the command did not run",
             "ERR BrokenPipe: Cluster: Failed to receive command response from internal sender. RecvError(())"
+                    + " | ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run",
+            "BrokenPipe: Cluster: Failed to receive command response from internal sender. RecvError(())"
                     + " | ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run",
             "ERR Received connection error `Cluster: Failed to receive command response from internal sender. RecvError(())`. Will attempt to reconnect"
                     + " | ERR backend unavailable: lost the connection to a cluster node; the command may or may not have run",

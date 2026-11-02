@@ -30,6 +30,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **INFO** as a standalone server answers it: the proxy's own clients, and stats and keyspace summed over the cluster.
 - **Real PROXY commands:** STATS, CLIENTINFO and CONFIG GET.
 - **Seed DNS names** are re-resolved at topology checks (`proxy.glide.refresh-topology-from-seeds`), so a re-pointed name moves the proxy to another cluster.
+- **Modules:** JSON, Bloom filters and vector search work through the proxy, tested against `valkey-bundle` nodes. Search needs its coordinator mode, and its replies (`FT.SEARCH`, `FT.AGGREGATE`, `FT.INFO`, `FT._LIST`), which Glide reshapes, are rebuilt to the module's shapes; see [compatibility](docs/COMPATIBILITY.md#modules).
 - **Topology changes** under live traffic are tested: migrations, new shards, failovers, and dead or hung primaries.
 - **Release artifacts:** a GitHub release with the jar, and a multi-architecture image on the GitHub Container Registry.
 - **Docs:** [configuration](docs/CONFIGURATION.md), [security](docs/SECURITY.md), [operations](docs/OPERATIONS.md), [compatibility](docs/COMPATIBILITY.md) and [architecture](docs/ARCHITECTURE.md). There's also a [catalog of the Glide and Valkey behaviors the proxy relies on](docs/UPSTREAM_ASSUMPTIONS.md).
@@ -58,6 +59,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Memory exhaustion:** a request's announced argument count (`*1048576`) no longer allocates the whole array up front, and per-command metrics no longer remember every made-up command name a client sends.
 - **Refused node commands:** SWAPDB and Valkey 9's slot migration commands (CLUSTER MIGRATESLOTS, SYNCSLOTS, CANCELSLOTMIGRATIONS, FLUSHSLOT) are now refused by default, like other node administration.
 - **ACL refusals** from the cluster are reported as NOPERM, not ERR.
+- **Error codes Glide doesn't know** keep their code: a module's `Index with name ... not found` no longer becomes `ERR Index: ...`.
 - **Blocking commands** of a client that disconnects now end, rather than keep a pooled backend client and pop a value nobody receives.
 - **SUBSCRIBE** while the client disconnects no longer leaks the subscription.
 - **SELECT** of a database the cluster doesn't have answers `ERR DB index is out of range`.

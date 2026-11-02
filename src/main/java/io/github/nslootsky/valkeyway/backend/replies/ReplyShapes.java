@@ -52,13 +52,13 @@ public final class ReplyShapes {
             // Glide parses the reply as a double, but it's a bulk string in RESP3 too.
             return bulk(DoubleFormat.valkey(d));
         }
-        // Every command reshaped below has a name of 5+ chars starting with x, z, h, g, b or l, so the
-        // hot short commands (GET, SET, HGET, HSET, ZADD, ...) exit without allocating.
+        // Every command reshaped below has a name of 5+ chars starting with x, z, h, g, b, l or f, so
+        // the hot short commands (GET, SET, HGET, HSET, ZADD, ...) exit without allocating.
         if (args[0].length < 5) {
             return value;
         }
         switch (args[0][0] | 0x20) {
-            case 'x', 'z', 'h', 'g', 'b', 'l' -> { }
+            case 'x', 'z', 'h', 'g', 'b', 'l', 'f' -> { }
             default -> {
                 return value;
             }
@@ -81,6 +81,10 @@ public final class ReplyShapes {
             case "geosearch", "georadius", "georadius_ro", "georadiusbymember", "georadiusbymember_ro" ->
                     geoResults(args, value);
             case "xpending" -> pendingSummary(args, value);
+            // The search module's replies are arrays, in RESP3 too. [upstream:G16]
+            case "ft.search" -> searchResults(args, value);
+            case "ft.aggregate" -> aggregateRows(value);
+            case "ft.info" -> arrays(value);
             default -> value;
         };
     }
@@ -365,6 +369,69 @@ public final class ReplyShapes {
 
     private static GlideString bulk(String s) {
         return GlideString.of(s);
+    }
+
+    /**
+     * FT.SEARCH: Glide makes {@code [total, key, fields, key, fields, ...]} into
+     * {@code [total, {key: {field: value}}]}, and NOCONTENT's {@code [total, key, key, ...]} into keys
+     * with empty maps. A reply of the total alone (LIMIT 0 0) is left as it is.
+     */
+    private static Object searchResults(byte[][] args, Object value) {
+        if (!(value instanceof Object[] reply) || reply.length != 2 || !(reply[1] instanceof Map<?, ?> docs)) {
+            return value;
+        }
+        boolean keysOnly = hasOption(args, "NOCONTENT")
+                && docs.values().stream().allMatch(fields -> fields instanceof Map<?, ?> m && m.isEmpty());
+        Object[] out = new Object[1 + docs.size() * (keysOnly ? 1 : 2)];
+        int i = 0;
+        out[i++] = reply[0];
+        for (Map.Entry<?, ?> doc : docs.entrySet()) {
+            out[i++] = doc.getKey();
+            if (!keysOnly) {
+                out[i++] = arrays(doc.getValue());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * FT.AGGREGATE: Glide drops the leading count and makes each row's {@code [field, value, ...]} a
+     * map. The count comes back as the number of rows, which is what the search module sends.
+     */
+    private static Object aggregateRows(Object value) {
+        Object[] rows = toArray(value);
+        if (rows == null) {
+            return value;
+        }
+        Object[] out = new Object[rows.length + 1];
+        out[0] = (long) rows.length;
+        for (int i = 0; i < rows.length; i++) {
+            out[i + 1] = arrays(rows[i]);
+        }
+        return out;
+    }
+
+    /** Maps as flat {@code [key, value, ...]} arrays, at every level. */
+    private static Object arrays(Object value) {
+        return switch (value) {
+            case Map<?, ?> map -> {
+                Object[] out = new Object[map.size() * 2];
+                int i = 0;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    out[i++] = entry.getKey();
+                    out[i++] = arrays(entry.getValue());
+                }
+                yield out;
+            }
+            case Object[] items -> {
+                Object[] out = new Object[items.length];
+                for (int i = 0; i < items.length; i++) {
+                    out[i] = arrays(items[i]);
+                }
+                yield out;
+            }
+            case null, default -> value;
+        };
     }
 
     private static Object[] toArray(Object value) {
