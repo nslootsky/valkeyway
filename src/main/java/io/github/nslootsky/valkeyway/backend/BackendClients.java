@@ -10,6 +10,7 @@ import glide.api.models.GlideString;
 import glide.api.models.configuration.AdvancedGlideClusterClientConfiguration;
 import glide.api.models.configuration.ClusterSubscriptionConfiguration;
 import glide.api.models.configuration.GlideClusterClientConfiguration;
+import glide.api.models.configuration.ReadFrom;
 import glide.api.models.configuration.NodeAddress;
 import glide.api.models.configuration.PeriodicChecksManualInterval;
 import glide.api.models.configuration.RequestRoutingConfiguration.SimpleSingleNodeRoute;
@@ -53,6 +54,9 @@ public class BackendClients {
     private static final long CREATE_TIMEOUT_SECONDS = 10;
 
     private final Map<Integer, GlideClusterClient> clients = new ConcurrentHashMap<>();
+    /** The same, reading from replicas: for connections that do ({@code proxy.replica-reads}). */
+    private final Map<Integer, GlideClusterClient> replicaClients = new ConcurrentHashMap<>();
+    private final ValkeywayProperties.ReplicaReads replicaReads;
     private final List<String> clusterNodes;
     private final int requestTimeout;
     private final int inflightRequestsLimit;
@@ -69,6 +73,7 @@ public class BackendClients {
         this.inflightRequestsLimit = props.glide().inflightRequestsLimit();
         this.refreshTopologyFromSeeds = props.glide().refreshTopologyFromSeeds();
         this.topologyCheckSeconds = props.glide().topologyCheckSeconds();
+        this.replicaReads = props.replicaReads();
     }
 
     private static byte[] readCaFile(ValkeywayProperties.BackendTls tls) {
@@ -147,11 +152,66 @@ public class BackendClients {
     }
 
     /**
+     * Whether a connection's reads go to replicas ({@code proxy.replica-reads}), given whether it sent
+     * READONLY.
+     */
+    public boolean readsFromReplicas(boolean readOnlyConnection) {
+        return switch (replicaReads.connections()) {
+            case NONE -> false;
+            case READONLY -> readOnlyConnection;
+            case ALL -> true;
+        };
+    }
+
+    /** The shared client for {@code db}: the primary-reading one, or the one that reads from replicas. */
+    public GlideClusterClient getClient(int db, boolean replicaReads) {
+        if (!replicaReads) {
+            return getClient(db);
+        }
+        return replicaClients.computeIfAbsent(db, _ -> {
+            GlideClusterClient client = createClient(db, replicaReadFrom());
+            log.info("Created GlideClusterClient for db={} reading from replicas ({})", db, replicaReadFrom());
+            return client;
+        });
+    }
+
+    /** {@link #getClient(int, boolean)} if it already exists, without creating one (never blocks). */
+    public GlideClusterClient getIfPresent(int db, boolean replicaReads) {
+        return replicaReads ? replicaClients.get(db) : clients.get(db);
+    }
+
+    /**
+     * With replica reads on, creates database 0's replica-reading client in the background, so the
+     * first READONLY reads don't wait for it. Glide connects to the replicas asynchronously and reads
+     * from the primary until it has, which is correct, just not yet from a replica.
+     */
+    public void preloadReplicaClient() {
+        if (replicaReads.connections() == ValkeywayProperties.ReplicaConnections.NONE) {
+            return;
+        }
+        Thread.ofVirtual().name("replica-client-preload").start(() -> {
+            try {
+                getClient(0, true);
+            } catch (RuntimeException e) {
+                log.warn("Couldn't create the replica-reading client yet; it will be created on first use: {}", e.getMessage());
+            }
+        });
+    }
+
+    private ReadFrom replicaReadFrom() {
+        return ReadFrom.valueOf(replicaReads.readFrom().name());
+    }
+
+    /**
      * Creates a new, unshared client for the given database. The caller owns it and must close it.
      */
     public GlideClusterClient createClient(int db) {
+        return createClient(db, ReadFrom.PRIMARY);
+    }
+
+    private GlideClusterClient createClient(int db, ReadFrom readFrom) {
         try {
-            return create(db, clusterNodes);
+            return create(db, clusterNodes, readFrom);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted creating GlideClusterClient for db=" + db, e);
@@ -163,7 +223,7 @@ public class BackendClients {
             log.warn("Can't reach the configured cluster nodes {} ({}); creating the client for db={} from the "
                     + "nodes the cluster currently has: {}. Update proxy.cluster-nodes.", clusterNodes, e.getMessage(), db, live);
             try {
-                return create(db, live);
+                return create(db, live, readFrom);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Interrupted creating GlideClusterClient for db=" + db, ie);
@@ -174,8 +234,12 @@ public class BackendClients {
         }
     }
 
-    private GlideClusterClient create(int db, List<String> seeds) throws Exception {
-        return GlideClusterClient.createClient(buildConfig(db, seeds)).get(CREATE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    private GlideClusterClient create(int db, List<String> seeds, ReadFrom readFrom) throws Exception {
+        var config = configBuilder(db, seeds).readFrom(readFrom);
+        if (readFrom != ReadFrom.PRIMARY && replicaReads.clientAz() != null) {
+            config.clientAZ(replicaReads.clientAz());
+        }
+        return GlideClusterClient.createClient(config.build()).get(CREATE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     /** host:port of every healthy node, as a live client sees the cluster now; empty if there is none. */
@@ -218,6 +282,11 @@ public class BackendClients {
 
     @PreDestroy
     public void closeAll() {
+        closeAll(replicaClients);
+        closeAll(clients);
+    }
+
+    private static void closeAll(Map<Integer, GlideClusterClient> clients) {
         for (Integer db : List.copyOf(clients.keySet())) {
             GlideClusterClient client = clients.remove(db);
             if (client != null) {

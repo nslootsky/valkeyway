@@ -28,6 +28,38 @@ class ValkeywayPropertiesTest {
     }
 
     @Test
+    void replicaReadsAreOffByDefault() {
+        ValkeywayProperties.ReplicaReads reads = bind(Map.of()).replicaReads();
+        assertEquals(ValkeywayProperties.ReplicaConnections.NONE, reads.connections());
+        assertEquals(ValkeywayProperties.ReplicaReadFrom.PREFER_REPLICA, reads.readFrom());
+    }
+
+    @Test
+    void replicaReadSettingsBind() {
+        ValkeywayProperties.ReplicaReads reads = bind(Map.of("proxy.replica-reads.connections", "readonly",
+                "proxy.replica-reads.read-from", "az-affinity", "proxy.replica-reads.client-az", "us-east-1a")).replicaReads();
+        assertEquals(ValkeywayProperties.ReplicaConnections.READONLY, reads.connections());
+        assertEquals(ValkeywayProperties.ReplicaReadFrom.AZ_AFFINITY, reads.readFrom());
+        assertEquals("us-east-1a", reads.clientAz());
+    }
+
+    @Test
+    void azAffinityNeedsTheProxysZone() {
+        Exception e = assertThrows(Exception.class, () -> bind(Map.of("proxy.replica-reads.connections", "all",
+                "proxy.replica-reads.read-from", "az-affinity")));
+        assertTrue(rootMessage(e).contains("proxy.replica-reads.client-az"), rootMessage(e));
+        // Not needed while no connection reads from replicas.
+        assertDoesNotThrow(() -> bind(Map.of("proxy.replica-reads.read-from", "az-affinity")));
+    }
+
+    private static String rootMessage(Throwable e) {
+        while (e.getCause() != null) {
+            e = e.getCause();
+        }
+        return String.valueOf(e.getMessage());
+    }
+
+    @Test
     void requestTimeoutDefaultsTo2000() {
         assertEquals(2000, bind(Map.of()).requestTimeoutMs());
     }

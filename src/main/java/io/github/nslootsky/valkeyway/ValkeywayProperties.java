@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -37,7 +38,8 @@ public record ValkeywayProperties(
     NodeAdmin nodeAdminCommands,
     Auth auth,
     Tls tls,
-    Backend backend
+    Backend backend,
+    ReplicaReads replicaReads
 ) {
     public ValkeywayProperties {
         if (host == null || host.isBlank()) host = "0.0.0.0";
@@ -60,6 +62,40 @@ public record ValkeywayProperties(
         if (glide == null) glide = new Glide(0, null, null, 0);
         if (transactions == null) transactions = new Transactions(null, null);
         if (nodeAdminCommands == null) nodeAdminCommands = NodeAdmin.REJECT;
+        if (replicaReads == null) replicaReads = new ReplicaReads(null, null, null);
+    }
+
+    /**
+     * Reads from replicas, which can return data a moment older than the primary's (replication is
+     * asynchronous), even data a client has just overwritten. Prefix: proxy.replica-reads.*
+     *
+     * @param connections which client connections read from replicas: none (the default), readonly
+     *        (those that send READONLY, until READWRITE or RESET), or all
+     * @param readFrom    how reads pick a node, as Glide's ReadFrom (default prefer-replica)
+     * @param clientAz    this proxy's availability zone, required by the az-affinity modes; nodes
+     *                    announce theirs with Valkey's {@code availability-zone} setting
+     */
+    public record ReplicaReads(ReplicaConnections connections, ReplicaReadFrom readFrom, String clientAz) {
+        public ReplicaReads {
+            if (connections == null) connections = ReplicaConnections.NONE;
+            if (readFrom == null) readFrom = ReplicaReadFrom.PREFER_REPLICA;
+            if (clientAz != null && clientAz.isBlank()) clientAz = null;
+            if (connections != ReplicaConnections.NONE && readFrom.needsClientAz() && clientAz == null) {
+                throw new IllegalArgumentException("proxy.replica-reads.read-from=" + readFrom.name().toLowerCase(Locale.ROOT)
+                        .replace('_', '-') + " needs proxy.replica-reads.client-az");
+            }
+        }
+    }
+
+    public enum ReplicaConnections { NONE, READONLY, ALL }
+
+    /** Glide's ReadFrom strategies that read from replicas. */
+    public enum ReplicaReadFrom {
+        PREFER_REPLICA, AZ_AFFINITY, AZ_AFFINITY_REPLICAS_AND_PRIMARY, ALL_NODES, AZ_AFFINITY_ALL_NODES;
+
+        boolean needsClientAz() {
+            return name().startsWith("AZ_");
+        }
     }
 
     /**

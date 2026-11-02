@@ -41,6 +41,7 @@ public final class ValkeywayCommands {
                                       ValkeywayProperties props) {
         CommandKeyExtractor keys = new CommandKeyExtractor();
         keys.preloadInBackground(() -> backendClients.getClient(0));
+        backendClients.preloadReplicaClient();
         Backend backend = new Backend(keys);
         WatchSessions watches = new WatchSessions(watchPool);
         NodeAdminCommands nodeAdmin = new NodeAdminCommands(props.nodeAdminCommands() == ValkeywayProperties.NodeAdmin.REJECT);
@@ -81,8 +82,8 @@ public final class ValkeywayCommands {
                 .register("acl", new AclCommand(catchAll))
                 .register("config", new ConfigCommand(catchAll))
                 .register("ft._list", new SearchListCommand(catchAll))
-                .register("readonly", LocalCommand.accept(Reply.OK))
-                .register("readwrite", LocalCommand.accept(Reply.OK))
+                .register("readonly", LocalCommand.readOnly(true))
+                .register("readwrite", LocalCommand.readOnly(false))
                 .register("monitor", LocalCommand.unsupported("MONITOR", ""));
         // Subscriptions go through the shared Pub/Sub hub, never over the backend connections.
         for (Kind kind : Kind.values()) {
