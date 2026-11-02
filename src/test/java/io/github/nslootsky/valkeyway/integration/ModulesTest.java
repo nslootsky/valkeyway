@@ -48,7 +48,7 @@ class ModulesTest {
     private static final String INDEX = "mt:items";
     private static final int ITEMS = 12;
 
-    private static final ValkeyClusterTestContainer cluster = ValkeyClusterTestContainer.withModules(3, 7600);
+    private static final ValkeyClusterTestContainer cluster = ValkeyClusterTestContainer.withSearchCoordinator(3, 7600);
     private static DirectNodes nodes;
 
     static {

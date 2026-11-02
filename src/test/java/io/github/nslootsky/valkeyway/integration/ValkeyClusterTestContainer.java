@@ -27,19 +27,20 @@ import java.util.List;
  */
 public class ValkeyClusterTestContainer implements AutoCloseable {
 
-    private static final DockerImageName VALKEY_IMAGE = DockerImageName.parse("valkey/valkey:9.1.3-alpine");
-    /** Valkey with the JSON, Bloom, search and LDAP modules. */
-    private static final DockerImageName BUNDLE_IMAGE = DockerImageName.parse("valkey/valkey-bundle:9.1.3");
+    /**
+     * Valkey with the JSON, Bloom and search modules (and LDAP, not loaded here): the one Valkey image
+     * the tests use, so CI pulls a single image.
+     */
+    static final DockerImageName IMAGE = DockerImageName.parse("valkey/valkey-bundle:9.1.3");
     private static final String MODULES_CONF = "/valkey-modules.conf";
     /**
-     * Search runs in coordinator mode, the only mode in which an index covers every shard's keys and a
-     * query searches them all. Its argument can't be given on the command line, where it would read as
-     * a server option, hence the configuration file.
+     * Every node loads the modules, as a valkey-bundle server does. Their arguments can't be given on
+     * the command line, where they'd read as server options, hence the configuration file.
      */
     private static final String MODULES = """
             loadmodule /usr/lib/valkey/libjson.so
             loadmodule /usr/lib/valkey/libvalkey_bloom.so
-            loadmodule /usr/lib/valkey/libsearch.so --use-coordinator
+            loadmodule /usr/lib/valkey/libsearch.so%s
             """;
 
     private final List<GenericContainer<?>> nodes = new ArrayList<>();
@@ -68,16 +69,17 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
     }
 
     /**
-     * A cluster of nodes with the JSON, Bloom and search modules, search in coordinator mode. The
-     * coordinator listens on its node's port + 20294: keep {@code basePort} under 12000, so that lands
-     * below Linux's ephemeral range (as the bus port, port - 6000, needs it above 7024).
+     * A cluster with search in coordinator mode, the only mode in which an index covers every shard's
+     * keys and a query searches them all. The coordinator listens on its node's port + 20294: keep
+     * {@code basePort} under 12000, so that lands below Linux's ephemeral range (as the bus port,
+     * port - 6000, needs it above 7024).
      */
-    public static ValkeyClusterTestContainer withModules(int primaries, int basePort) {
+    public static ValkeyClusterTestContainer withSearchCoordinator(int primaries, int basePort) {
         return new ValkeyClusterTestContainer(primaries, 0, 0, basePort, 5000, "", null, true);
     }
 
     private ValkeyClusterTestContainer(int primaries, int replicasPerPrimary, int spareNodes, int basePort,
-                                       int nodeTimeoutMs, String extraArgs, TestCertificates tls, boolean modules) {
+                                       int nodeTimeoutMs, String extraArgs, TestCertificates tls, boolean coordinator) {
         this.replicasPerPrimary = replicasPerPrimary;
         int memberCount = primaries * (1 + replicasPerPrimary);
         for (int i = 0; i < memberCount + spareNodes; i++) {
@@ -87,9 +89,9 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
             String tlsArgs = tls == null ? "" : String.format(
                     " --tls-port %d --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key"
                             + " --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no --tls-cluster yes", tlsPort(port));
-            GenericContainer<?> node = new GenericContainer<>(modules ? BUNDLE_IMAGE : VALKEY_IMAGE)
+            GenericContainer<?> node = new GenericContainer<>(IMAGE)
                     .withNetworkMode("host")
-                    .withCommand((modules ? MODULES_CONF + " " : "") + String.format(
+                    .withCommand(MODULES_CONF + " " + String.format(
                             "--port %d --cluster-port %d --cluster-enabled yes --cluster-config-file nodes.conf " +
                                     "--cluster-node-timeout %d --appendonly yes --daemonize no --bind 0.0.0.0 " +
                                     "--cluster-databases 16 %s",
@@ -98,11 +100,10 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
                     // With host networking there are no mapped ports to probe; wait for the server itself.
                     .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*", 1))
                     .withStartupTimeout(Duration.ofMinutes(2));
-            if (modules) {
-                // Started directly, not through the image's script, which would load the modules again.
-                node.withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint("valkey-server"))
-                        .withCopyToContainer(Transferable.of(MODULES), MODULES_CONF);
-            }
+            // Started directly, not through the image's script, which would also load LDAP.
+            node.withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint("valkey-server"))
+                    .withCopyToContainer(Transferable.of(MODULES.formatted(coordinator ? " --use-coordinator" : "")),
+                            MODULES_CONF);
             if (tls != null) {
                 for (String file : List.of("ca.crt", "server.crt", "server.key")) {
                     node.withCopyFileToContainer(MountableFile.forHostPath(tls.dir().resolve(file), 0644), "/tls/" + file);

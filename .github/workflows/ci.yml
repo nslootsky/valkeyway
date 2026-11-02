@@ -57,5 +57,14 @@ jobs:
         # SeedDnsTest runs the packaged proxy jar in a container.
         run: ./mvnw package -DskipTests
 
+      - name: Pull the test images
+        # Once, before the tests: Testcontainers pulls an image when a test first needs it, once per
+        # node starting at the same moment. Keep in step with ValkeyClusterTestContainer.IMAGE and
+        # SeedDnsTest.
+        run: |
+          docker pull -q valkey/valkey-bundle:9.1.3 & valkey=$!
+          docker pull -q eclipse-temurin:25-jre-alpine & jre=$!
+          wait $valkey && wait $jre
+
       - name: Run integration tests
         run: ./mvnw failsafe:integration-test failsafe:verify -Dskip.integration.tests=false
