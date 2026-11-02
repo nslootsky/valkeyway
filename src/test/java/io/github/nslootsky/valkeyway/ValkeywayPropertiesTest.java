@@ -49,7 +49,7 @@ class ValkeywayPropertiesTest {
         assertEquals(4000, props.requestTimeoutMs());
     }
 
-    /** The environment variable names docs/SECURITY.md gives. */
+    /** The environment variable names docs/AUTH_AND_TLS.md gives. */
     @Test
     void securitySettingsBindFromEnvironmentVariables() {
         Map<String, Object> env = Map.of(
