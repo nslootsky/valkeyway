@@ -19,22 +19,29 @@ The image is published for linux/amd64 and linux/arm64, tagged with each version
 
 ### The proxy
 
-**Memory.** Give the proxy container at least 512 MB. The image's defaults keep it well inside that:
+**Memory: 2 GB.** The image is set up for a 2 GB container:
 
-- **A small heap** (`-XX:MaxRAMPercentage=15`, in `JAVA_TOOL_OPTIONS`). The proxy's own heap is small: about 20 MB live after a collection. Glide frees the native memory behind larger responses only when the garbage collector collects their Java buffers. With a large heap, collections are rare and that native memory piles up: in our tests, a 512 MB heap let the process reach 1.4 GB, while a single collection brought it back to 330 MB. A small heap keeps collections frequent.
-- **`MALLOC_ARENA_MAX=2`**, so glibc doesn't keep memory pools per CPU and hold on to freed memory.
+- **G1 with a 70% heap** (`-XX:MaxRAMPercentage=70`). Glide hands the proxy responses over 16 KB (large values, and batch replies, which the proxy's batching makes common) in native memory, freed when the garbage collector collects their Java buffers. G1's frequent young collections free it promptly.
+- **jemalloc** (`LD_PRELOAD`, with `MALLOC_CONF=metadata_thp:auto,background_thread:true`), which gives memory back after load spikes.
+- **Compact object headers** (`-XX:+UseCompactObjectHeaders`, Java 25).
 - **`-XX:+ExitOnOutOfMemoryError`:** if the heap does run out, the process exits and the container restarts, rather than running on in a broken state.
 
-Measured with the release image on 2 CPUs: 500 clients pipelining 512-byte SET/GET, then 200 clients with 100 KB values.
+Measured with the release image in a 2 GB container. The load: 500 clients pipelining 512-byte SET/GET, then 200 clients with 100 KB values.
 
-| Memory limit | Heap | Idle | Peak | Throughput |
+| CPUs | Throughput | p99 | Peak memory | 30 s after the load |
 |---|---|---|---|---|
-| 512 MB | 126 MB (the JVM's minimum) | ~160 MB | ~470 MB | ~325k requests/s |
-| 1 GB | 154 MB | ~140 MB | ~510 MB | ~330k requests/s |
+| 2 | ~390k requests/s | ~21-26 ms | ~1.1-1.2 GB | ~0.8-0.9 GB |
+| 4 | ~550k requests/s | ~17-21 ms | ~1.1-1.2 GB | ~0.8-0.9 GB |
 
-With the JVM's own default heap (25%) memory follows the limit instead, to about 80% of it, and with a larger heap the container is killed for exceeding its limit. More memory doesn't make the proxy faster. Raise the heap only for very many connections (thousands), together with the limit. To change the defaults, set `JAVA_TOOL_OPTIONS` (keep `-XX:+ExitOnOutOfMemoryError` in it) or `MALLOC_ARENA_MAX`. For the jar outside the image, use the same flags: `MALLOC_ARENA_MAX=2 java -Xmx256m -XX:+ExitOnOutOfMemoryError -jar valkeyway.jar ...`.
+What we tried and why the defaults are what they are:
 
-**CPU.** Throughput grows with CPUs; about 330k requests/s on 2 CPUs in the test above. Set a CPU request, but avoid a hard CPU limit: throttling shows up directly as latency spikes. If you must set one, use whole CPUs. `proxy.clients.io-threads` (default 2) sets the network threads ([CONFIGURATION.md](CONFIGURATION.md#tuning)).
+- **ZGC:** don't use it with this proxy. ZGC lets the heap fill and collects in long concurrent cycles, and Glide's native buffers piled up meanwhile: the process reached 6.5 GB with a 1.4 GB heap, while G1 with the same heap levelled off around 1 GB. Collecting every second didn't keep up.
+- **Smaller containers:** the proxy needs about 600 MB outside the heap under heavy large-value load (the JVM's own memory plus Glide's buffers in flight). A 1 GB container with a 70% heap leaves 300 MB and was killed; 1 GB works with the JVM's default heap of 25% (peaking at about 80% of the limit). With small values the need is much lower.
+- **glibc instead of jemalloc** (`MALLOC_ARENA_MAX=2`) used about the same peak memory, but held on to it after the load. `percpu_arena:percpu` and Glide's in-flight request limit made no difference; compact object headers neither helped nor hurt this workload.
+
+To change the defaults, set `JAVA_TOOL_OPTIONS` (keep `-XX:+ExitOnOutOfMemoryError` in it), `MALLOC_CONF` or `LD_PRELOAD`. For the jar outside the image, the same settings apply: `LD_PRELOAD=/path/to/libjemalloc.so.2 MALLOC_CONF=metadata_thp:auto,background_thread:true java -XX:MaxRAMPercentage=70 -XX:+UseCompactObjectHeaders -XX:+ExitOnOutOfMemoryError -jar valkeyway.jar ...`.
+
+**CPU.** Throughput grows with CPUs, as above. Set a CPU request, but avoid a hard CPU limit: throttling shows up directly as latency spikes. If you must set one, use whole CPUs. `proxy.clients.io-threads` (default 2) sets the network threads ([CONFIGURATION.md](CONFIGURATION.md#tuning)).
 
 **Instances.** The proxy scales out: several instances behind a TCP load balancer serve one cluster. Each keeps its own connections to every primary, so size the cluster's `maxclients` for all instances.
 
