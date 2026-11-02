@@ -212,6 +212,9 @@ class ModulesTest {
      */
     private static Object comparable(String[] command, Object reply) {
         Object plain = plain(reply);
+        if (command[0].equalsIgnoreCase("FT.INFO") && plain instanceof List<?> info) {
+            return withSortedAttributes(info);
+        }
         if (!(plain instanceof List<?> items) || items.isEmpty() || !(items.getFirst() instanceof Long total)) {
             return plain;
         }
@@ -231,6 +234,22 @@ class ModulesTest {
         List<Object> out = new ArrayList<>();
         out.add(total);
         out.addAll(rest);
+        return out;
+    }
+
+    /**
+     * FT.INFO with its attributes in a fixed order. With PRIMARY scope the module merges every
+     * primary's attributes, and their order differs from node to node and index to index.
+     */
+    private static List<Object> withSortedAttributes(List<?> info) {
+        List<Object> out = new ArrayList<>(info);
+        for (int i = 0; i + 1 < out.size(); i += 2) {
+            if ("attributes".equals(out.get(i)) && out.get(i + 1) instanceof List<?> attributes) {
+                List<Object> sorted = new ArrayList<>(attributes);
+                sorted.sort(Comparator.comparing(String::valueOf));
+                out.set(i + 1, sorted);
+            }
+        }
         return out;
     }
 
