@@ -16,7 +16,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Credentials are hidden:** CONFIG GET redacts the values of password settings, and ACL LIST and ACL GETUSER are refused unless `proxy.node-admin-commands: forward`.
 - **`proxy.connect-timeout-ms` is now `proxy.request-timeout-ms`.** The old name still works, with a deprecation warning.
 - **Admin commands:** `PROXY FLUSHCLIENTS` is gone, and `PROXY CONFIG` is GET-only.
-- **The Docker image** is now based on Ubuntu (glibc) rather than Alpine, and is published for linux/amd64 and linux/arm64 as `ghcr.io/nslootsky/valkeyway`.
+- **The Docker image** is now based on Ubuntu (glibc) rather than Alpine, and is published for linux/amd64 and linux/arm64 as `ghcr.io/nslootsky/valkeyway`. It is set up for a 2 GB container: G1 with a 70% heap, jemalloc and compact object headers; see [sizing](docs/OPERATIONS.md#sizing).
 
 ### Added
 

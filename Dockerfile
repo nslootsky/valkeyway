@@ -16,10 +16,25 @@ RUN ./mvnw package -DskipTests -q
 # Run stage: glibc-based, like the release image (Glide has no aarch64 musl library)
 FROM docker.io/eclipse-temurin:25-jre
 
+# jemalloc, linked to one path for every architecture (it installs under /usr/lib/<arch>-linux-gnu).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libjemalloc2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s "$(ls /usr/lib/*-linux-gnu/libjemalloc.so.2)" /usr/local/lib/libjemalloc.so.2
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin valkeyway
 WORKDIR /app
 COPY --from=build /app/target/valkeyway-*.jar app.jar
 USER valkeyway
+
+# Memory, measured under heavy load (docs/OPERATIONS.md#sizing): sized for a 2 GB container.
+# - G1, 70% heap: G1's frequent young collections let Glide free the native memory behind large
+#   responses (>16 KB) promptly. Avoid ZGC: with it that native memory ran to several GB.
+# - jemalloc, which returns memory after load spikes.
+# - Compact object headers (Java 25); exit on heap exhaustion so the container restarts.
+# Override any of these variables to change them.
+ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2 \
+    MALLOC_CONF=metadata_thp:auto,background_thread:true \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseCompactObjectHeaders -XX:+ExitOnOutOfMemoryError"
 
 EXPOSE 6379 6380
 

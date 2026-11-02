@@ -15,6 +15,46 @@ Clients connect on port 6379. The management port, 6380, serves health checks an
 
 The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
 
+## Sizing
+
+### The proxy
+
+**Memory: 2 GB.** The image is set up for a 2 GB container:
+
+- **G1 with a 70% heap** (`-XX:MaxRAMPercentage=70`). Glide hands the proxy responses over 16 KB (large values, and batch replies, which the proxy's batching makes common) in native memory, freed when the garbage collector collects their Java buffers. G1's frequent young collections free it promptly.
+- **jemalloc** (`LD_PRELOAD`, with `MALLOC_CONF=metadata_thp:auto,background_thread:true`), which gives memory back after load spikes.
+- **Compact object headers** (`-XX:+UseCompactObjectHeaders`, Java 25).
+- **`-XX:+ExitOnOutOfMemoryError`:** if the heap does run out, the process exits and the container restarts, rather than running on in a broken state.
+
+Measured with the release image in a 2 GB container. The load: 500 clients pipelining 512-byte SET/GET, then 200 clients with 100 KB values.
+
+| CPUs | Throughput | p99 | Peak memory | 30 s after the load |
+|---|---|---|---|---|
+| 2 | ~390k requests/s | ~21-26 ms | ~1.1-1.2 GB | ~0.8-0.9 GB |
+| 4 | ~550k requests/s | ~17-21 ms | ~1.1-1.2 GB | ~0.8-0.9 GB |
+
+What we tried and why the defaults are what they are:
+
+- **ZGC:** don't use it with this proxy. ZGC lets the heap fill and collects in long concurrent cycles, and Glide's native buffers piled up meanwhile: the process reached 6.5 GB with a 1.4 GB heap, while G1 with the same heap levelled off around 1 GB. Collecting every second didn't keep up.
+- **Smaller containers:** the proxy needs about 600 MB outside the heap under heavy large-value load (the JVM's own memory plus Glide's buffers in flight). A 1 GB container with a 70% heap leaves 300 MB and was killed; 1 GB works with the JVM's default heap of 25% (peaking at about 80% of the limit). With small values the need is much lower.
+- **glibc instead of jemalloc** (`MALLOC_ARENA_MAX=2`) used about the same peak memory, but held on to it after the load. `percpu_arena:percpu` and Glide's in-flight request limit made no difference; compact object headers neither helped nor hurt this workload.
+
+To change the defaults, set `JAVA_TOOL_OPTIONS` (keep `-XX:+ExitOnOutOfMemoryError` in it), `MALLOC_CONF` or `LD_PRELOAD`. For the jar outside the image, the same settings apply: `LD_PRELOAD=/path/to/libjemalloc.so.2 MALLOC_CONF=metadata_thp:auto,background_thread:true java -XX:MaxRAMPercentage=70 -XX:+UseCompactObjectHeaders -XX:+ExitOnOutOfMemoryError -jar valkeyway.jar ...`.
+
+**CPU.** Throughput grows with CPUs, as above. Set a CPU request, but avoid a hard CPU limit: throttling shows up directly as latency spikes. If you must set one, use whole CPUs. `proxy.clients.io-threads` (default 2) sets the network threads ([CONFIGURATION.md](CONFIGURATION.md#tuning)).
+
+**Instances.** The proxy scales out: several instances behind a TCP load balancer serve one cluster. Each keeps its own connections to every primary, so size the cluster's `maxclients` for all instances.
+
+### The Valkey nodes
+
+These are general Valkey guidelines; the proxy adds nothing to them.
+
+- **Set `maxmemory` below the container's memory limit.** A node also needs memory for client and replication buffers, the replication backlog and fragmentation, and a background save (RDB, or AOF rewrite) forks the process, whose copy-on-write pages can briefly need up to twice the data's memory. As a rule of thumb, `maxmemory` at about 70-75% of the limit with persistence on, about 85% with it off.
+- **Choose the eviction policy** (`maxmemory-policy`): `allkeys-lru` for a cache, `noeviction` if writes must fail rather than drop data.
+- **Modules:** vector indexes (valkey-search) live in memory; leave extra room for them.
+- **CPU:** 1-2 CPUs per node; Valkey runs commands on one thread, with optional I/O threads.
+- **Kubernetes:** requests equal to limits (Guaranteed QoS), so nodes aren't evicted under memory pressure. Spread primaries and their replicas over different machines and zones. On the hosts, disable transparent huge pages and set `vm.overcommit_memory=1`, so the fork for a background save doesn't fail.
+
 ## Health and metrics
 
 Spring Boot Actuator, on the management port:
