@@ -43,12 +43,12 @@ proxy:
     refresh-topology-from-seeds: true  # Check topology via the seeds, re-resolving DNS names
     topology-check-seconds: 0          # How often Glide checks for topology changes; 0 = Glide's default (60)
 
-  auth:                         # Client passwords; unset = none. See SECURITY.md.
+  auth:                         # Client passwords; unset = none. See AUTH_AND_TLS.md.
     password:                   # The default user's password: AUTH <password>
     users:                      # Named users: AUTH <user> <password>
       app: ...
     timeout-seconds: 10         # With a password, close connections not authenticated by then; 0 = never
-  tls:                          # TLS for clients. See SECURITY.md.
+  tls:                          # TLS for clients. See AUTH_AND_TLS.md.
     port: 0                     # TLS port; 0 = off
     cert-file:                  # PEM certificate chain (reloaded when it changes)
     key-file:                   # PEM private key, PKCS#8
@@ -56,7 +56,7 @@ proxy:
     ca-file:                    # CA for client certificates
     client-certs: none          # none, optional or required
     protocols:                  # e.g. TLSv1.2,TLSv1.3; default the JDK's
-  backend:                      # How the proxy connects to the cluster. See SECURITY.md.
+  backend:                      # How the proxy connects to the cluster. See AUTH_AND_TLS.md.
     username:                   # Unset = default
     password:                   # Unset = no AUTH
     tls:

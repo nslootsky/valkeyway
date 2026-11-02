@@ -53,7 +53,7 @@ public class ValkeywayApplication {
             log.info("Client authentication is off (proxy.auth.password isn't set)");
         } else {
             log.warn("Client authentication is off and the proxy listens on {}: any client that can reach it can run "
-                    + "any command. Set proxy.auth.password (see docs/SECURITY.md).", props.host());
+                    + "any command. Set proxy.auth.password (see docs/AUTH_AND_TLS.md).", props.host());
         }
         return users;
     }

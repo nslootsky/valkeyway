@@ -35,7 +35,7 @@ Through the proxy, these would reach whichever node Glide picks, so they're refu
 - SWAPDB, which would swap databases on one node only;
 - the CLUSTER subcommands that change the cluster (MEET, FORGET, SETSLOT, ADDSLOTS, FAILOVER, RESET, MIGRATESLOTS, FLUSHSLOT, ...).
 
-Their read-only counterparts work, such as CONFIG GET, ACL WHOAMI and CLUSTER KEYSLOT. Run administration against the nodes directly, or set `forward` if you know where they'll land. This guards against mistakes, not malice: see [SECURITY.md](SECURITY.md#hardening).
+Their read-only counterparts work, such as CONFIG GET, ACL WHOAMI and CLUSTER KEYSLOT. Run administration against the nodes directly, or set `forward` if you know where they'll land. This guards against mistakes, not malice: see [AUTH_AND_TLS.md](AUTH_AND_TLS.md#hardening).
 
 ## Differences from a standalone server
 
