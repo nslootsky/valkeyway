@@ -42,7 +42,7 @@ No configuration change is needed: every new setting is off by default. Some beh
   - blocking commands run on dedicated backend clients, so they never hold up other clients.
 
   Unpipelined throughput rose from about 150k to 200–290k requests/s, and pipelined clients are 2–4× faster. See [docs/RESP_LAYER.md](docs/RESP_LAYER.md).
-- **Clearer errors when the cluster can't serve a command:** they say whether the command may have run.
+- **Clearer errors when the cluster can't serve a command:** they say whether the command may have run. This includes `CLUSTERDOWN` during a failover, now `ERR backend unavailable: ...; the command did not run`.
 - **SCAN cursors** belong to the database they started in, can be used once, and are released when abandoned.
 
 ### Fixed
@@ -58,6 +58,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Memory exhaustion:** a request's announced argument count (`*1048576`) no longer allocates the whole array up front, and per-command metrics no longer remember every made-up command name a client sends.
 - **Refused node commands:** SWAPDB and Valkey 9's slot migration commands (CLUSTER MIGRATESLOTS, SYNCSLOTS, CANCELSLOTMIGRATIONS, FLUSHSLOT) are now refused by default, like other node administration.
 - **ACL refusals** from the cluster are reported as NOPERM, not ERR.
+- **CLIENT UNBLOCK** no longer loses data: a blocking command unblocked while still on its way to the node could block there afterwards, and take an element that no client received.
 - **Blocking commands** of a client that disconnects now end, rather than keep a pooled backend client and pop a value nobody receives.
 - **SUBSCRIBE** while the client disconnects no longer leaks the subscription.
 - **SELECT** of a database the cluster doesn't have answers `ERR DB index is out of range`.

@@ -153,6 +153,39 @@ class ConnectionCommandsTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * A command unblocked while still on its way to the node must not block there afterwards and
+     * take an element nobody receives. The proxy had that race (about 1 in 16 times locally): it ended
+     * the client's wait itself when the node didn't have the command yet. Each round unblocks a fresh
+     * BLPOP at once, then checks that the next element goes to the next BLPOP.
+     */
+    @Test
+    void anUnblockedCommandNeverTakesALaterElement() throws Exception {
+        for (int round = 0; round < 60; round++) {
+            try (RawRespClient admin = connect(); RawRespClient blocked = connect()) {
+                String id = blocked.call("CLIENT", "ID").toString();
+                for (String mode : new String[]{"TIMEOUT", "ERROR"}) {
+                    blocked.call("DEL", "conn:race");
+                    blocked.send("BLPOP", "conn:race", "0");
+                    long deadline = System.currentTimeMillis() + 5000;
+                    while (admin.call("CLIENT", "UNBLOCK", id, mode).equals(0L) && System.currentTimeMillis() < deadline) {
+                        Thread.onSpinWait();
+                    }
+                    blocked.readReply();
+                    assertEquals(new Status("PONG"), blocked.call("PING"));
+                }
+                blocked.send("BLPOP", "conn:race", "0");
+                long deadline = System.currentTimeMillis() + 5000;
+                while (!((String) admin.call("CLIENT", "LIST", "ID", id)).contains("flags=b")
+                        && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(1);
+                }
+                admin.call("LPUSH", "conn:race", "x" + round);
+                assertEquals(List.of("conn:race", "x" + round), blocked.readReply(), "round " + round);
+            }
+        }
+    }
+
     /** CLIENT UNBLOCK ends another client's blocking command, as a timeout or with an error, as on Valkey. */
     @Test
     void clientUnblock() throws Exception {
@@ -246,6 +279,8 @@ class ConnectionCommandsTest extends IntegrationTestBase {
     @Test
     void proxyCommands() throws Exception {
         try (RawRespClient a = connect(); RawRespClient b = connect()) {
+            // A connection counts once the proxy has accepted it, which can be after connect() returns.
+            assertEquals(new Status("PONG"), b.call("PING"));
             String stats = (String) a.call("PROXY", "STATS");
             int connected = Integer.parseInt(stats.split("connected_clients:")[1].split("\r\n")[0]);
             assertTrue(connected >= 2, stats);

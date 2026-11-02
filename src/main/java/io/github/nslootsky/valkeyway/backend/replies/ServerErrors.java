@@ -85,6 +85,7 @@ public final class ServerErrors {
 
     private static final String BACKEND_UNAVAILABLE = "ERR backend unavailable: ";
     private static final String DID_NOT_RUN = "; the command did not run";
+    private static final String CLUSTER_DOWN = "CLUSTERDOWN ";
 
     /** An error reply for {@code e}, unwrapping {@link ExecutionException}. */
     public static Reply error(Throwable e) {
@@ -147,6 +148,13 @@ public final class ServerErrors {
         if (redirect.matches()) {
             return BACKEND_UNAVAILABLE + "can't reach " + redirect.group(2) + " (slot " + redirect.group(1) + ")"
                     + DID_NOT_RUN;
+        }
+        if (m.startsWith(CLUSTER_DOWN)) {
+            // The cluster can't serve the slot right now (a failover in progress, or a slot without a
+            // primary), and the node refused the command without running it. Nothing a client of a
+            // standalone server can make sense of.
+            return BACKEND_UNAVAILABLE + "the cluster can't serve this command (" + m.substring(CLUSTER_DOWN.length())
+                    + ")" + DID_NOT_RUN;
         }
         if (!m.startsWith("ERR ")) {
             return m;
