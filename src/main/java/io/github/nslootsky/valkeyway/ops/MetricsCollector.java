@@ -34,6 +34,13 @@ public class MetricsCollector implements CommandListener {
     private final Counter errors;
     private final Timer commandLatency;
     private final ConcurrentHashMap<String, Counter> perCommand = new ConcurrentHashMap<>();
+    private final Counter other;
+    private final Counter authFailures;
+
+    /** A wrong user or password (AUTH, HELLO ... AUTH). */
+    public void authFailed() {
+        authFailures.increment();
+    }
 
     public MetricsCollector(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -46,26 +53,60 @@ public class MetricsCollector implements CommandListener {
         commandLatency = Timer.builder(PREFIX + ".commands.latency")
                 .description("Command execution latency")
                 .register(meterRegistry);
+        other = Counter.builder(PREFIX + ".commands.processed").tag("type", "OTHER").register(meterRegistry);
+        authFailures = Counter.builder(PREFIX + ".auth.failures")
+                .description("AUTH and HELLO AUTH attempts with a wrong user or password")
+                .register(meterRegistry);
     }
+
+    /** Longer names can't be commands; counting them as such would let clients pick metric labels. */
+    static final int MAX_COMMAND_NAME = 32;
 
     @Override
     public void answered(byte[] name, Reply reply, long elapsedNanos) {
         commandsProcessed.increment();
-        String command = new String(name, StandardCharsets.US_ASCII);
-        Counter counter = perCommand.get(command);
-        if (counter == null) {
-            counter = perCommand.computeIfAbsent(command, this::commandCounter);
-        }
-        counter.increment();
+        commandCounter(name).increment();
         if (reply instanceof Reply.Error) {
             errors.increment();
         }
         commandLatency.record(elapsedNanos, TimeUnit.NANOSECONDS);
     }
 
-    private Counter commandCounter(String command) {
-        String type = perCommand.size() < MAX_COMMAND_TAGS ? command.toUpperCase(Locale.ROOT) : "OTHER";
-        return Counter.builder(PREFIX + ".commands.processed").tag("type", type).register(meterRegistry);
+    /**
+     * The counter for a command name. Bounded: names are case-folded, at most {@link #MAX_COMMAND_TAGS}
+     * distinct ones get their own counter, and anything beyond that or not shaped like a command name
+     * counts as OTHER without being remembered. Clients choose the names, so an unbounded map would
+     * let any client, authenticated or not, grow the heap with made-up ones.
+     */
+    private Counter commandCounter(byte[] name) {
+        if (!looksLikeCommand(name)) {
+            return other;
+        }
+        String command = new String(name, StandardCharsets.US_ASCII).toUpperCase(Locale.ROOT);
+        Counter counter = perCommand.get(command);
+        if (counter != null) {
+            return counter;
+        }
+        if (perCommand.size() >= MAX_COMMAND_TAGS) {
+            return other;
+        }
+        return perCommand.computeIfAbsent(command,
+                c -> Counter.builder(PREFIX + ".commands.processed").tag("type", c).register(meterRegistry));
+    }
+
+    /** Letters, digits, '.', '_' and '-' (module commands), and short. */
+    static boolean looksLikeCommand(byte[] name) {
+        if (name.length == 0 || name.length > MAX_COMMAND_NAME) {
+            return false;
+        }
+        for (byte b : name) {
+            boolean ok = (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+                    || b == '.' || b == '_' || b == '-';
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public double getTotalCommands() {

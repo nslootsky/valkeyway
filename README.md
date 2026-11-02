@@ -15,7 +15,7 @@ It is built on Java 25 and Netty, and uses [valkey-glide](https://github.com/val
 
 ```bash
 docker run -d --name valkeyway -p 6379:6379 -p 6380:6380 \
-  nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+  ghcr.io/nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 
 valkey-cli SET mykey hello
 valkey-cli MGET key1 key2 key3     # keys on different nodes, one reply

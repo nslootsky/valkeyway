@@ -21,7 +21,10 @@ public final class NodeAdminCommands {
     /** Refused whatever their arguments. */
     private static final Set<String> COMMANDS = Set.of(
             "shutdown", "replicaof", "slaveof", "failover", "debug", "save", "bgsave", "bgrewriteaof",
-            "sync", "psync", "replconf", "module");
+            "sync", "psync", "replconf", "module",
+            // Keyless and without a request policy, so Glide sends it to one node: it would swap two
+            // databases on that node only.
+            "swapdb");
 
     /** Refused for these subcommands only. */
     private static final Map<String, Set<String>> SUBCOMMANDS = Map.of(
@@ -29,7 +32,9 @@ public final class NodeAdminCommands {
             "acl", Set.of("setuser", "deluser", "load", "save"),
             "cluster", Set.of("addslots", "addslotsrange", "delslots", "delslotsrange", "failover", "forget",
                     "flushslots", "meet", "replicate", "reset", "saveconfig", "set-config-epoch", "setslot",
-                    "bumpepoch"));
+                    "bumpepoch",
+                    // Valkey 9: deleting a slot's keys, and atomic slot migration
+                    "flushslot", "migrateslots", "cancelslotmigrations", "syncslots"));
 
     private final boolean reject;
 
@@ -60,9 +65,16 @@ public final class NodeAdminCommands {
             if (subcommands.contains(sub)) {
                 return error((name + " " + sub).toUpperCase(Locale.ROOT));
             }
+            if (name.equals("acl") && CREDENTIAL_READS.contains(sub)) {
+                return "ERR ACL " + sub.toUpperCase(Locale.ROOT) + " would show the cluster's credentials and is not "
+                        + "allowed through the proxy; send it to a node directly (or set proxy.node-admin-commands=forward)";
+            }
         }
         return null;
     }
+
+    /** ACL subcommands that show the cluster users' password hashes. */
+    private static final Set<String> CREDENTIAL_READS = Set.of("list", "getuser");
 
     private static String error(String command) {
         return "ERR " + command + " administers a single node and is not allowed through the proxy; send it to the "

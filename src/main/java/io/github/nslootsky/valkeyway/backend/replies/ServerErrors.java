@@ -9,7 +9,6 @@ import java.util.Set;
 import java.util.concurrent.CompletionException;
 import glide.api.models.exceptions.ClosingException;
 import glide.api.models.exceptions.TimeoutException;
-import glide.api.models.exceptions.RequestException;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 
 import java.util.Map;
@@ -60,7 +59,9 @@ public final class ServerErrors {
             Map.entry("CrossSlot", "CROSSSLOT"),
             Map.entry("MasterDown", "MASTERDOWN"),
             Map.entry("ReadOnly", "READONLY"),
-            Map.entry("NotBusy", "NOTBUSY"));
+            Map.entry("NotBusy", "NOTBUSY"),
+            // An ACL refusal on the node (e.g. the proxy's backend user lacks @admin)
+            Map.entry("PermissionDenied", "NOPERM"));
 
     /**
      * Error codes with which a cluster node rejects a command without running it, and which Glide

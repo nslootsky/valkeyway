@@ -1,0 +1,20 @@
+# Weekly update PRs for dependencies, GitHub Actions and the Docker base images. CI runs the full
+# test suite on each.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR for the Spring Boot-managed stack (Spring, Netty, Micrometer, ...)
+      spring-boot:
+        patterns: ["org.springframework.boot:*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

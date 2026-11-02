@@ -5,15 +5,15 @@
 ```bash
 # Docker, against an existing cluster
 docker run -d --name valkeyway -p 6379:6379 -p 6380:6380 \
-  nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+  ghcr.io/nslootsky/valkeyway:latest --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 
-# Or the jar (Java 25)
+# Or the jar (Java 25), from the GitHub release
 java -jar valkeyway.jar --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 ```
 
 Clients connect on port 6379. The management port, 6380, serves health checks and metrics. Settings are described in [CONFIGURATION.md](CONFIGURATION.md), and passwords and TLS in [SECURITY.md](SECURITY.md).
 
-The image runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
+The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
 
 ## Health and metrics
 
@@ -26,6 +26,7 @@ Spring Boot Actuator, on the management port:
 |---|---|
 | `proxy.commands.processed` | Commands answered, tagged by command |
 | `proxy.errors` | Error replies |
+| `proxy.auth.failures` | AUTH attempts with a wrong user or password |
 | `proxy.commands.latency` | Command latency histogram |
 | `proxy.blocking.pool.in_use`, `.clients` | Blocking commands running; pooled backend clients open |
 | `proxy.blocking.pool.exhausted_waits` | Blocking commands that waited because the pool was full |

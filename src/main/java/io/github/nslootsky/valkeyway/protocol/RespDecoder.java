@@ -10,6 +10,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.util.ByteProcessor;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -25,6 +26,8 @@ public final class RespDecoder extends ByteToMessageDecoder {
     static final int MAX_INLINE = 64 * 1024;
     /** Valkey's limit on arguments per request. */
     static final int MAX_ARGS = 1024 * 1024;
+    /** Arguments allocated before any has arrived (Valkey's argv_len starts at most at 1024). */
+    static final int PREALLOCATED_ARGS = 1024;
     /** Valkey's default proto-max-bulk-len. */
     static final long MAX_BULK = 512L * 1024 * 1024;
 
@@ -54,6 +57,8 @@ public final class RespDecoder extends ByteToMessageDecoder {
 
     // State of a partly decoded array request.
     private byte[][] args;
+    /** How many arguments the request announced; {@code args} grows towards it as they arrive. */
+    private int argCount;
     private int argIndex;
     private int bulkLength = -1;
 
@@ -114,7 +119,10 @@ public final class RespDecoder extends ByteToMessageDecoder {
         if (count <= 0) {
             return true; // "*0" / "*-1": nothing to run, as in Valkey
         }
-        args = new byte[(int) count][];
+        // Like Valkey, don't trust the announced count for allocation: "*1048576" alone would
+        // otherwise cost megabytes per connection before any argument has arrived.
+        argCount = (int) count;
+        args = new byte[Math.min(argCount, PREALLOCATED_ARGS)][];
         argIndex = 0;
         bulkLength = -1;
         return true;
@@ -142,7 +150,7 @@ public final class RespDecoder extends ByteToMessageDecoder {
 
     /** Reads bulk-string arguments. Returns false if more bytes are needed. */
     private boolean readArguments(ByteBuf in) {
-        while (argIndex < args.length) {
+        while (argIndex < argCount) {
             if (bulkLength < 0) {
                 if (!in.isReadable()) {
                     return false;
@@ -177,6 +185,9 @@ public final class RespDecoder extends ByteToMessageDecoder {
             in.readBytes(value);
             if (in.readByte() != '\r' || in.readByte() != '\n') {
                 throw new ProtocolException("invalid CRLF in request");
+            }
+            if (argIndex == args.length) {
+                args = Arrays.copyOf(args, (int) Math.min((long) args.length * 2, argCount));
             }
             args[argIndex++] = value;
             bulkLength = -1;

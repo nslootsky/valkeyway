@@ -23,6 +23,9 @@ import io.netty.channel.EventLoop;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.Locale;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -100,7 +103,8 @@ public class CatchAllCommand implements AsyncCommandHandler {
             // Gone since canRunAsync: create it off the network thread.
             return CompletableFuture.supplyAsync(() -> executeUnchecked(request), FALLBACK);
         }
-        if (coalescer != null && replyExecutor instanceof EventLoop loop && loop.inEventLoop()) {
+        if (coalescer != null && !mayRunLong(request.args()) && replyExecutor instanceof EventLoop loop
+                && loop.inEventLoop()) {
             return coalescer.submit(db, request.args(), loop);
         }
         return backend.call(client, request.args()).thenApplyAsync(Function.identity(), replyExecutor);
@@ -143,6 +147,24 @@ public class CatchAllCommand implements AsyncCommandHandler {
             return blocking.run(connection, args, keys.extractKeys(clients.getClient(connection.db()), args), spec.get());
         }
         return backend.callAndWait(clients.getClient(connection.db()), args);
+    }
+
+    /** Commands that can run long; coalesced with others, a timeout of theirs would fail the whole batch. */
+    private static final Set<String> LONG_RUNNING = Set.of("keys", "eval", "evalsha", "eval_ro", "evalsha_ro",
+            "fcall", "fcall_ro", "function", "script", "sort", "sort_ro");
+
+    static boolean mayRunLong(byte[][] args) {
+        byte[] name = args[0];
+        if (name.length < 4 || name.length > 10) {
+            return false;
+        }
+        switch (name[0] | 0x20) {
+            case 'k', 'e', 'f', 's' -> { }
+            default -> {
+                return false;
+            }
+        }
+        return LONG_RUNNING.contains(new String(name, StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT));
     }
 
     private Reply executeUnchecked(Request request) {

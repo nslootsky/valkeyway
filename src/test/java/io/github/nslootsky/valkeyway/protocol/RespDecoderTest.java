@@ -176,6 +176,22 @@ class RespDecoderTest {
         assertEquals(error, protocolError("*3\r\n$3\r\nSETxx$3\r\nkey\r\n$5\r\nvalue\r\n"));
     }
 
+    /** Many arguments still decode exactly, though the array is grown as they arrive rather than allocated up front. */
+    @Test
+    void requestsWithManyArgumentsGrowTheirArray() {
+        int n = 5000;
+        StringBuilder request = new StringBuilder("*").append(n).append("\r\n");
+        for (int i = 0; i < n; i++) {
+            String arg = Integer.toString(i);
+            request.append('$').append(arg.length()).append("\r\n").append(arg).append("\r\n");
+        }
+        List<List<String>> decoded = decode(request.toString());
+        assertEquals(1, decoded.size());
+        assertEquals(n, decoded.getFirst().size());
+        assertEquals("4999", decoded.getFirst().get(n - 1));
+        assertEquals(List.of(List.of("a", "b")), decode("*2\r\n$1\r\na\r\n$1\r\nb\r\n"));
+    }
+
     @Test
     void rejectsOversizedInlineRequest() {
         assertEquals("ERR Protocol error: too big inline request", protocolError("x".repeat(70_000)));

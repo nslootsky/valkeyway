@@ -96,6 +96,17 @@ class ValkeywayPropertiesTest {
     }
 
     @Test
+    void secretsAreNotInToString() {
+        ValkeywayProperties props = bind(Map.of("proxy.auth.password", "hunter2", "proxy.auth.users.app", "apppw",
+                "proxy.backend.password", "backendpw", "proxy.tls.key-password", "keypw"));
+        String text = props.toString();
+        for (String secret : new String[]{"hunter2", "apppw", "backendpw", "keypw"}) {
+            assertFalse(text.contains(secret), secret + " in " + text);
+        }
+        assertTrue(text.contains("users=[app]"), text);
+    }
+
+    @Test
     void requestTimeoutHasAFloor() {
         assertEquals(500, bind(Map.of("proxy.request-timeout-ms", "10")).requestTimeoutMs());
     }

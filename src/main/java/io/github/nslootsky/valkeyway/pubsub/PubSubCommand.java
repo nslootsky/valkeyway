@@ -87,7 +87,11 @@ public class PubSubCommand implements CommandHandler {
         }
         List<Reply> confirmations = new ArrayList<>(request.argCount());
         for (int i = 0; i < request.argCount(); i++) {
-            session.add(kind, request.argString(i));
+            if (!session.add(kind, request.argString(i))) {
+                // The client disconnected while the cluster subscribed: don't leave these behind.
+                hub.unsubscribe(session, kind, fresh);
+                return Reply.error("ERR client disconnected");
+            }
             confirmations.add(new Reply.Push(List.of(kind.subscribe, new Reply.Bulk(request.arg(i)),
                     Reply.integer(session.count(kind)))));
         }

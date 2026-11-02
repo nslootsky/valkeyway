@@ -46,7 +46,44 @@ public class ValkeywayApplication {
 
     @Bean
     Users users(ValkeywayProperties props) {
-        return new Users(props.auth().password(), props.auth().users());
+        Users users = new Users(props.auth().password(), props.auth().users());
+        if (users.authRequired()) {
+            log.info("Client authentication is on (users: {})", users.names());
+        } else if (isLoopback(props.host())) {
+            log.info("Client authentication is off (proxy.auth.password isn't set)");
+        } else {
+            log.warn("Client authentication is off and the proxy listens on {}: any client that can reach it can run "
+                    + "any command. Set proxy.auth.password (see docs/SECURITY.md).", props.host());
+        }
+        return users;
+    }
+
+    /** Settings that would silently have no effect, or leave a way around what they set up. */
+    private static void warnAboutUnusedTlsSettings(ValkeywayProperties props) {
+        ValkeywayProperties.Tls tls = props.tls();
+        if (tls.port() == 0 && (tls.certFile() != null || tls.keyFile() != null || tls.caFile() != null
+                || tls.clientCerts() != TlsContext.ClientCerts.NONE)) {
+            log.warn("proxy.tls.* settings have no effect without proxy.tls.port");
+        }
+        if (tls.port() != 0 && tls.clientCerts() == TlsContext.ClientCerts.REQUIRED && props.port() != 0) {
+            log.warn("Client certificates are required on the TLS port {}, but the plain-text port {} is open too "
+                    + "(set proxy.port: 0 to close it)", tls.port(), props.port());
+        }
+        ValkeywayProperties.Backend backend = props.backend();
+        if (!backend.tls().enabled() && (backend.tls().caFile() != null || backend.tls().insecure())) {
+            log.warn("proxy.backend.tls.ca-file and insecure have no effect without proxy.backend.tls.enabled");
+        }
+        if (!backend.tls().enabled() && backend.password() != null) {
+            log.info("The cluster's password is sent without TLS (proxy.backend.tls.enabled is false)");
+        }
+    }
+
+    private static boolean isLoopback(String host) {
+        try {
+            return java.net.InetAddress.getByName(host).isLoopbackAddress();
+        } catch (java.net.UnknownHostException e) {
+            return false;
+        }
     }
 
     @Bean(destroyMethod = "close")
@@ -63,10 +100,11 @@ public class ValkeywayApplication {
         TlsContext tlsContext = tls.port() == 0 ? null : new TlsContext(new TlsContext.Settings(
                 Path.of(tls.certFile()), Path.of(tls.keyFile()), tls.keyPassword(),
                 tls.caFile() == null ? null : Path.of(tls.caFile()), tls.clientCerts(), tls.protocols()));
+        warnAboutUnusedTlsSettings(props);
         RespServer server = new RespServer(
                 new RespServer.Settings(props.host(), props.port() == 0 ? -1 : props.port(),
                         tls.port() == 0 ? -1 : tls.port(), tlsContext, clients.ioThreads(), clients.maxClients(),
-                        clients.timeoutSeconds(), users.authRequired()),
+                        clients.timeoutSeconds(), users.authRequired(), props.auth().timeoutSeconds()),
                 ValkeywayCommands.create(backendClients, scanCursorStore, metrics, blockingPool, watchPool, users, pubSub, props));
         server.start();
         log.info("Proxy ready");

@@ -25,6 +25,8 @@ class ServerErrorsTest {
                     + " | NOSCRIPT No matching script.",
             "glide.api.models.exceptions.RequestException: An error was signalled by the server: - CrossSlot: Keys in request don't hash to the same slot"
                     + " | CROSSSLOT Keys in request don't hash to the same slot",
+            "glide.api.models.exceptions.RequestException: An error was signalled by the server: - PermissionDenied: User proxy has no permissions to run the 'shutdown' command"
+                    + " | NOPERM User proxy has no permissions to run the 'shutdown' command",
             "glide.api.models.exceptions.RequestException: An error was signalled by the server: - NotBusy: No scripts in execution right now."
                     + " | NOTBUSY No scripts in execution right now.",
             "glide.api.models.exceptions.RequestException: WRONGTYPE: Operation against a key holding the wrong kind of value"

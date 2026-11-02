@@ -1,0 +1,3 @@
+# Dockerfile.release only needs the built jar.
+*
+!target/valkeyway-*.jar

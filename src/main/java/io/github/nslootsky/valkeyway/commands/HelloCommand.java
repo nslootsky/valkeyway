@@ -5,6 +5,7 @@
 
 package io.github.nslootsky.valkeyway.commands;
 
+import io.github.nslootsky.valkeyway.ProxyVersion;
 import io.github.nslootsky.valkeyway.protocol.Reply;
 import io.github.nslootsky.valkeyway.server.Connection;
 import io.github.nslootsky.valkeyway.server.InlineCommandHandler;
@@ -22,9 +23,11 @@ import java.util.List;
 public class HelloCommand implements InlineCommandHandler {
 
     private final Users users;
+    private final Runnable onAuthFailure;
 
-    public HelloCommand(Users users) {
+    public HelloCommand(Users users, Runnable onAuthFailure) {
         this.users = users;
+        this.onAuthFailure = onAuthFailure;
     }
 
     @Override
@@ -70,7 +73,7 @@ public class HelloCommand implements InlineCommandHandler {
             }
         }
         if (user != null) {
-            Reply auth = AuthCommand.authenticate(connection, users, user, password);
+            Reply auth = AuthCommand.authenticate(connection, users, user, password, onAuthFailure);
             if (auth instanceof Reply.Error) {
                 return auth;
             }
@@ -89,7 +92,7 @@ public class HelloCommand implements InlineCommandHandler {
         connection.protocol((int) version);
         return new Reply.MapReply(List.of(
                 Reply.bulk("server"), Reply.bulk("valkeyway"),
-                Reply.bulk("version"), Reply.bulk("0.1.0"),
+                Reply.bulk("version"), Reply.bulk(ProxyVersion.get()),
                 Reply.bulk("proto"), Reply.integer(version),
                 Reply.bulk("id"), Reply.integer(connection.id()),
                 Reply.bulk("mode"), Reply.bulk("standalone"),

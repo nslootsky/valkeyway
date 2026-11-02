@@ -6,6 +6,7 @@
 package io.github.nslootsky.valkeyway.commands;
 
 import glide.api.GlideClusterClient;
+import io.github.nslootsky.valkeyway.ProxyVersion;
 import io.github.nslootsky.valkeyway.ValkeywayProperties;
 import io.github.nslootsky.valkeyway.backend.BackendClients;
 import io.github.nslootsky.valkeyway.backend.replies.ServerErrors;
@@ -82,6 +83,7 @@ public class ValkeywayAdminCommand implements CommandHandler {
     private Reply stats(Connection connection) {
         long uptimeSeconds = TimeUnit.MILLISECONDS.toSeconds(ManagementFactory.getRuntimeMXBean().getUptime());
         String text = "# Proxy\r\n"
+                + "valkeyway_version:" + ProxyVersion.get() + "\r\n"
                 + "uptime_in_seconds:" + uptimeSeconds + "\r\n"
                 + "connected_clients:" + connection.registry().clients().size() + "\r\n"
                 + "maxclients:" + connection.registry().maxClients() + "\r\n"
@@ -153,7 +155,9 @@ public class ValkeywayAdminCommand implements CommandHandler {
         c.put("transactions.watch-pool.max-size", Integer.toString(props.transactions().watchPool().maxSize()));
         c.put("node-admin-commands", props.nodeAdminCommands().name().toLowerCase(Locale.ROOT));
         // Passwords are never shown, only whether they are set.
-        c.put("auth.password", props.auth().password() == null || props.auth().password().isEmpty() ? "" : "(set)");
+        // Whether the default user really has a password (also when it comes from auth.users.default).
+        String defaultPassword = props.auth().users().getOrDefault("default", props.auth().password());
+        c.put("auth.password", defaultPassword == null || defaultPassword.isEmpty() ? "" : "(set)");
         c.put("auth.users", String.join(",", new TreeSet<>(props.auth().users().keySet())));
         c.put("tls.port", Integer.toString(props.tls().port()));
         c.put("tls.client-certs", props.tls().clientCerts().name().toLowerCase(Locale.ROOT));
