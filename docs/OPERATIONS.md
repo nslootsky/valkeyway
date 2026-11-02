@@ -42,10 +42,10 @@ What clients see while the cluster changes shape. `TopologyChangeTest` runs each
 
 | Change | Clients see |
 |---|---|
-| Slot migration (ASK, TRYAGAIN) | Commands succeed. Inside a client pipeline, a multi-key command whose keys are split mid-migration gets `TRYAGAIN` (likewise `CLUSTERDOWN` and similar errors during a failover), as a standalone server's pipeline reports errors per command. |
+| Slot migration (ASK, TRYAGAIN) | Commands succeed. Inside a client pipeline, a multi-key command whose keys are split mid-migration gets `TRYAGAIN`, as a standalone server's pipeline reports errors per command. |
 | Slot moved, also to a newly added shard | Commands succeed, including inside pipelines. |
 | Graceful failover (`CLUSTER FAILOVER`) | No errors. |
-| A primary dies | Its shard's commands fail until the replica is promoted (about the cluster's node timeout), then succeed without a proxy restart. |
+| A primary dies | Its shard's commands fail until the replica is promoted (about the cluster's node timeout), then succeed without a proxy restart. While the cluster counts itself down, other shards' commands can fail too. The errors are `ERR backend unavailable: ...` (below). |
 | A primary hangs (frozen process, network partition) | Its shard's commands time out until the node answers again, even after its replica is promoted (a Glide limitation). |
 | A seed DNS name is re-pointed at another cluster | The proxy moves to the new cluster at its next topology check ([CONFIGURATION.md](CONFIGURATION.md#seed-nodes-and-dns)). |
 
