@@ -29,9 +29,12 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
 
     /**
      * Valkey with the JSON, Bloom and search modules (and LDAP, not loaded here): the one Valkey image
-     * the tests use, so CI pulls a single image.
+     * the tests use, so CI pulls a single image. The bundle has its own version numbers: bundle 9.1.4
+     * is Valkey 9.1.3 (bundle 9.1.3 is Valkey 9.1.2).
      */
-    static final DockerImageName IMAGE = DockerImageName.parse("valkey/valkey-bundle:9.1.3");
+    static final DockerImageName IMAGE = DockerImageName.parse("valkey/valkey-bundle:9.1.4-alpine");
+    /** The Valkey version in {@link #IMAGE}, checked when a cluster starts. */
+    static final String VALKEY_VERSION = "9.1.3";
     private static final String MODULES_CONF = "/valkey-modules.conf";
     /**
      * Every node loads the modules, as a valkey-bundle server does. Their arguments can't be given on
@@ -146,6 +149,20 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
             throw new RuntimeException("Failed to create Valkey cluster: " + result.getStdout() + "\n" + result.getStderr());
         }
         awaitHealthy(Duration.ofSeconds(60));
+        checkVersion();
+    }
+
+    /** Fails if the image runs another Valkey version than the tests and docs assume. */
+    private void checkVersion() {
+        String[] hostPort = members.getFirst().split(":");
+        try (RawRespClient client = new RawRespClient(hostPort[0], Integer.parseInt(hostPort[1]))) {
+            String info = (String) client.call("INFO", "server");
+            if (!info.contains("valkey_version:" + VALKEY_VERSION + "\r\n")) {
+                throw new IllegalStateException(IMAGE + " doesn't run Valkey " + VALKEY_VERSION + ":\n" + info);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** Waits until every member reports cluster_state:ok and every replica has finished its initial sync. */

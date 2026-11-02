@@ -8,7 +8,7 @@ grep -rn "upstream:G4" src
 
 `UpstreamAssumptionsTest` checks that every ID listed here is tagged somewhere in `src/main`, and that every tag names a listed ID.
 
-**Last verified against:** valkey-glide 2.5.3 (Java), Valkey 9.1.3, valkey-bundle 9.1.3 (search 1.2.1).
+**Last verified against:** valkey-glide 2.5.3 (Java), Valkey 9.1.3 (as valkey-bundle 9.1.4, with search 1.2.1, JSON 1.0.3 and Bloom 1.0.1). Bundle versions aren't Valkey versions: check with `valkey-server --version` in the image.
 
 ## When upgrading Glide or Valkey
 
@@ -297,4 +297,4 @@ Inline commands are split by `sdssplitargs` (`sdsparsearg` in sds.c). Since Valk
 The search module indexes and queries every shard's keys only when loaded with `--use-coordinator`: `FT.CREATE` then reaches every primary, and `FT.SEARCH` on any node fans out to all shards. Without it, an index lives on the node that created it, covers that node's keys, and queries answer from that node alone, with no error. `FT.INFO` reports the node it reaches; `FT.INFO <index> PRIMARY` sums over all primaries.
 
 - **Code:** `SearchListCommand` (correct in both modes).
-- **Live test:** `ModulesTest.vectorSearchCoversEveryShard`, against valkey-bundle 9.1.3 (search 1.2.1).
+- **Live test:** `ModulesTest.vectorSearchCoversEveryShard`, against valkey-bundle 9.1.4 (search 1.2.1).

@@ -62,7 +62,7 @@ jobs:
         # node starting at the same moment. Keep in step with ValkeyClusterTestContainer.IMAGE and
         # SeedDnsTest.
         run: |
-          docker pull -q valkey/valkey-bundle:9.1.3 & valkey=$!
+          docker pull -q valkey/valkey-bundle:9.1.4-alpine & valkey=$!
           docker pull -q eclipse-temurin:25-jre-alpine & jre=$!
           wait $valkey && wait $jre
 
