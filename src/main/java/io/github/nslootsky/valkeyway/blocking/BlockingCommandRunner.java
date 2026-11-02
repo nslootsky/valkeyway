@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -101,20 +102,43 @@ public final class BlockingCommandRunner {
 
     /** One blocking command's wait, which CLIENT UNBLOCK (from another client's thread) can end. */
     private final class Waiter {
+        static final int NOT_SENT = 0;
+        static final int SENT = 1;
+        static final int ENDED_BEFORE_SENDING = 2;
+
         final int db;
         final int slot;
         /** Completed when the wait is ended here rather than by the node; true = with an error. */
         final CompletableFuture<Boolean> forced = new CompletableFuture<>();
+        /** Whether the command was sent, or ended before it could be: decided once, by whoever is first. */
+        final AtomicInteger state = new AtomicInteger(NOT_SENT);
         volatile long nodeClientId = -1;
+        volatile CompletableFuture<?> reply;
 
         Waiter(int db, int slot) {
             this.db = db;
             this.slot = slot;
         }
 
+        /**
+         * Ends the wait. A command not sent yet is never sent. A sent one is ended on the node, so the
+         * node answers it: CLIENT UNBLOCK is repeated until the command has arrived there, since a
+         * command still on its way would otherwise block on the node later and take an element that
+         * nobody receives. Only if the node can't be asked is the wait ended here, and the pooled
+         * connection discarded.
+         */
         void unblock(boolean withError) {
+            if (state.compareAndSet(NOT_SENT, ENDED_BEFORE_SENDING)) {
+                forced.complete(withError);
+                return;
+            }
             long id = nodeClientId;
-            if (id > 0) {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(UNBLOCK_TIMEOUT_SECONDS);
+            while (id > 0 && System.nanoTime() < deadline) {
+                CompletableFuture<?> pending = reply;
+                if (pending != null && pending.isDone()) {
+                    return; // the node has answered
+                }
                 try {
                     Object unblocked = backendClients.getClient(db).customCommand(new GlideString[]{
                                     GlideString.of("CLIENT"), GlideString.of("UNBLOCK"), GlideString.of(Long.toString(id)),
@@ -123,10 +147,13 @@ public final class BlockingCommandRunner {
                     if (Long.valueOf(1).equals(unblocked)) {
                         return; // the node ends the command and answers it
                     }
+                    Thread.sleep(1); // not blocked on the node yet: the command is still on its way
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    break;
                 } catch (Exception e) {
                     log.debug("CLIENT UNBLOCK on the node failed: {}", e.getMessage());
+                    break;
                 }
             }
             forced.complete(withError);
@@ -144,12 +171,13 @@ public final class BlockingCommandRunner {
             if (waiter.slot >= 0) {
                 waiter.nodeClientId = nodeClientId(lease.resource(), waiter.slot);
             }
-            if (waiter.forced.isDone()) {
+            if (!waiter.state.compareAndSet(Waiter.NOT_SENT, Waiter.SENT)) {
                 return unblockedReply(spec, waiter.forced.join()); // unblocked before the command was sent
             }
             long waitedMillis = (System.nanoTime() - start) / 1_000_000;
             byte[][] effective = spec.withRemainingTimeout(args, waitedMillis);
             CompletableFuture<ClusterValue<Object>> reply = backend.send(lease.resource(), effective);
+            waiter.reply = reply;
             CompletableFuture.anyOf(reply, waiter.forced).get();
             if (!reply.isDone()) {
                 lease.discard(); // the command may still be pending on its connection
