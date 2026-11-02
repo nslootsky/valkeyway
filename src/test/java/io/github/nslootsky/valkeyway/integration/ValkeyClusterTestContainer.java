@@ -19,7 +19,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A Valkey cluster of {@code primaries} shards with {@code replicasPerPrimary} replicas each, plus
@@ -51,6 +53,8 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
     private final List<String> spares = new ArrayList<>();
     private final List<String> tlsMembers = new ArrayList<>();
     private final int replicasPerPrimary;
+    /** Nodes started at once. */
+    private static final int START_PARALLELISM = 3;
 
     public ValkeyClusterTestContainer(int numNodes) {
         this(numNodes, 0, 0, 27000, 5000, "");
@@ -122,7 +126,10 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
 
     public void start() {
         try {
-            Startables.deepStart(nodes).join();
+            // A few at a time: Podman's API service has deadlocked starting seven at once.
+            for (int i = 0; i < nodes.size(); i += START_PARALLELISM) {
+                Startables.deepStart(nodes.subList(i, Math.min(i + START_PARALLELISM, nodes.size()))).join();
+            }
         } catch (RuntimeException e) {
             StringBuilder logs = new StringBuilder();
             for (int i = 0; i < nodes.size(); i++) {
@@ -186,11 +193,43 @@ public class ValkeyClusterTestContainer implements AutoCloseable {
             if (!info.contains("cluster_state:ok")) {
                 return false;
             }
+            // Every node must report every member online, in the view clients (Glide) read: until a
+            // node has heard a replica's replication offset it lists the replica as loading, and Glide
+            // skips it until its next topology check (a minute), so reads meant for replicas go to
+            // primaries. (Other nodes, such as a spare added as a shard, may be listed too.)
+            Set<Long> online = new HashSet<>();
+            onlinePorts(client.call("CLUSTER", "SHARDS"), online);
+            if (!members.stream().allMatch(m -> online.contains(Long.parseLong(m.substring(m.lastIndexOf(':') + 1)))
+                    || online.contains((long) tlsPort(Integer.parseInt(m.substring(m.lastIndexOf(':') + 1)))))) {
+                return false;
+            }
             // Replicas must have finished their initial sync.
             String replication = (String) client.call("INFO", "replication");
             return !replication.contains("role:slave") || replication.contains("master_link_status:up");
         } catch (IOException | RuntimeException e) {
             return false;
+        }
+    }
+
+    /** The ports (plain and TLS) of the nodes a CLUSTER SHARDS reply lists with {@code health online}. */
+    private static void onlinePorts(Object reply, Set<Long> ports) {
+        if (!(reply instanceof List<?> items)) {
+            return;
+        }
+        int health = items.indexOf("health");
+        if (health >= 0 && health % 2 == 0) { // a node's fields
+            if (health + 1 < items.size() && "online".equals(items.get(health + 1))) {
+                for (String key : List.of("port", "tls-port")) {
+                    int i = items.indexOf(key);
+                    if (i >= 0 && i % 2 == 0 && i + 1 < items.size() && items.get(i + 1) instanceof Long port) {
+                        ports.add(port);
+                    }
+                }
+            }
+            return;
+        }
+        for (Object item : items) {
+            onlinePorts(item, ports);
         }
     }
 

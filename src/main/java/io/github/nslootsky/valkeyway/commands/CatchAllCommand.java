@@ -85,7 +85,7 @@ public class CatchAllCommand implements AsyncCommandHandler {
         if (connection.inTransaction() || BlockingCommands.detect(args).isPresent() || nodeAdmin.check(args) != null) {
             return false;
         }
-        if (clients.getIfPresent(connection.db()) == null) {
+        if (clients.getIfPresent(connection.db(), replicaReads(connection)) == null) {
             return false;
         }
         // A batch (pipeline, coalesced commands) can't route a command; Glide would misroute these. [upstream:G15]
@@ -98,21 +98,23 @@ public class CatchAllCommand implements AsyncCommandHandler {
     @Override
     public CompletionStage<Reply> executeAsync(Request request, Executor replyExecutor) {
         int db = request.connection().db();
-        GlideClusterClient client = clients.getIfPresent(db);
+        boolean replicaReads = replicaReads(request.connection());
+        GlideClusterClient client = clients.getIfPresent(db, replicaReads);
         if (client == null) {
             // Gone since canRunAsync: create it off the network thread.
             return CompletableFuture.supplyAsync(() -> executeUnchecked(request), FALLBACK);
         }
         if (coalescer != null && !mayRunLong(request.args()) && replyExecutor instanceof EventLoop loop
                 && loop.inEventLoop()) {
-            return coalescer.submit(db, request.args(), loop);
+            return coalescer.submit(db, replicaReads, request.args(), loop);
         }
         return backend.call(client, request.args()).thenApplyAsync(Function.identity(), replyExecutor);
     }
 
     @Override
     public CompletionStage<List<Reply>> executeBatchAsync(List<Request> requests, Executor replyExecutor) {
-        GlideClusterClient client = clients.getIfPresent(requests.getFirst().connection().db());
+        Connection connection = requests.getFirst().connection(); // a batch is one connection's pipeline
+        GlideClusterClient client = clients.getIfPresent(connection.db(), replicaReads(connection));
         if (client == null) {
             return CompletableFuture.supplyAsync(() -> requests.stream().map(this::executeUnchecked).toList(), FALLBACK);
         }
@@ -146,7 +148,16 @@ public class CatchAllCommand implements AsyncCommandHandler {
             }
             return blocking.run(connection, args, keys.extractKeys(clients.getClient(connection.db()), args), spec.get());
         }
-        return backend.callAndWait(clients.getClient(connection.db()), args);
+        return backend.callAndWait(clients.getClient(connection.db(), replicaReads(connection)), args);
+    }
+
+    /**
+     * Whether this connection's commands go through the client that reads from replicas. Only commands
+     * this handler sends on their own or in a batch do: transactions, WATCH, blocking commands and
+     * SCAN always read from primaries, so that a transaction never decides on stale data.
+     */
+    private boolean replicaReads(Connection connection) {
+        return clients.readsFromReplicas(connection.readOnly());
     }
 
     /** Commands that can run long; coalesced with others, a timeout of theirs would fail the whole batch. */

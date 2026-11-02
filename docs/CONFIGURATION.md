@@ -37,6 +37,11 @@ proxy:
     max-size: 64                # Blocking commands running at once; more wait for a free client
     idle-timeout-seconds: 60    # Close a pooled client after this long unused
 
+  replica-reads:                # Reads from replicas, which can lag the primary. See "Reading from replicas" below.
+    connections: none           # none, readonly (connections that send READONLY) or all
+    read-from: prefer-replica   # prefer-replica, az-affinity, az-affinity-replicas-and-primary, all-nodes, az-affinity-all-nodes
+    client-az:                  # This proxy's availability zone; required by the az-affinity modes
+
   glide:
     inflight-requests-limit: 50000     # Outstanding requests per Glide client (Glide's default is 1000)
     coalesce-requests: true            # Send concurrent clients' commands to Glide in shared batches
@@ -81,6 +86,28 @@ management:                     # Spring Boot Actuator: health, metrics, Prometh
 ## Seed nodes and DNS
 
 Seed nodes can be IPs or DNS names. With `refresh-topology-from-seeds` (the default), Glide resolves and asks the seeds again at each topology check. Re-pointing a DNS name at another cluster (a blue/green cutover) therefore moves the proxy there at the next check. Glide refreshes slots at most once every 15–30 s, so a cutover can take that much longer. If the seeds can't be reached, the proxy keeps using the nodes it already knows.
+
+## Reading from replicas
+
+By default every command goes to the primary of its shard. With `replica-reads.connections`, reads can go to replicas instead:
+- **`readonly`:** connections that send `READONLY` read from replicas, until `READWRITE` or `RESET`. Cluster clients send `READONLY` when told to read from replicas, so this lets each application decide. `CLIENT LIST` shows these connections with the `r` flag.
+- **`all`:** every connection reads from replicas.
+
+Replication is asynchronous, so a replica can return data a moment older than the primary's, including a value the same client has just overwritten, even within one pipeline. Writes always go to primaries, and so does everything that decides on data or holds a connection's state: transactions (MULTI/EXEC), WATCH, blocking commands, SCAN and Pub/Sub. HGETALL, ZRANGE ... WITHSCORES, XRANGE and the other commands whose reply is a map also stay on primaries, because the proxy routes them to a slot explicitly to keep their replies intact.
+
+`read-from` picks among the nodes, as Glide's `ReadFrom` does:
+
+| `read-from` | Reads go to |
+|---|---|
+| `prefer-replica` | Replicas in turn; the primary if a shard has none |
+| `az-affinity` | Replicas in the proxy's availability zone, then other replicas, then the primary |
+| `az-affinity-replicas-and-primary` | Replicas in the proxy's zone, then its primary if in the zone, then any node |
+| `all-nodes` | Every node in turn, primaries included |
+| `az-affinity-all-nodes` | Every node in the proxy's zone in turn, then any node |
+
+The zone modes need `client-az`, and nodes announce their zone with Valkey's `availability-zone` setting. In the cloud they keep reads within a zone, which avoids cross-zone latency and traffic charges.
+
+Glide connects to the replicas in the background, so right after startup, reads go to primaries for a moment. A replica that joins later, or that Glide didn't see when it read the topology, gets reads after Glide's next topology check (`glide.topology-check-seconds`, 60 by default); until then its shard's reads go to the primary.
 
 ## Tuning
 

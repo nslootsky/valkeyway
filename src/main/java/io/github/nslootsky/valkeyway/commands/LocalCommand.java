@@ -18,22 +18,25 @@ public final class LocalCommand implements InlineCommandHandler {
     private final Reply reply;
     private final InTransaction inTransaction;
 
-    private LocalCommand(Reply reply, InTransaction inTransaction) {
+    private final Boolean readOnly;
+
+    private LocalCommand(Reply reply, InTransaction inTransaction, Boolean readOnly) {
         this.reply = reply;
         this.inTransaction = inTransaction;
+        this.readOnly = readOnly;
     }
 
     /**
-     * Accepted and ignored (READONLY, READWRITE: replica reads are a cluster matter). Inside MULTI it's
-     * rejected, since queueing it would send it over the shared connection inside EXEC.
+     * READONLY (true) or READWRITE (false): whether this connection's reads may go to replicas,
+     * which they do when {@code proxy.replica-reads.connections} is readonly. Rejected inside MULTI.
      */
-    public static LocalCommand accept(Reply reply) {
-        return new LocalCommand(reply, InTransaction.REJECT);
+    public static LocalCommand readOnly(boolean readOnly) {
+        return new LocalCommand(Reply.OK, InTransaction.REJECT, readOnly);
     }
 
     /** Rejected: the proxy can't offer it (MONITOR, Pub/Sub subscriptions). */
     public static LocalCommand unsupported(String name, String why) {
-        return new LocalCommand(Reply.error("ERR " + name + " is not supported by this proxy" + why), InTransaction.REJECT);
+        return new LocalCommand(Reply.error("ERR " + name + " is not supported by this proxy" + why), InTransaction.REJECT, null);
     }
 
     @Override
@@ -43,6 +46,9 @@ public final class LocalCommand implements InlineCommandHandler {
 
     @Override
     public Reply execute(Request request) {
+        if (readOnly != null) {
+            request.connection().readOnly(readOnly);
+        }
         return reply;
     }
 }

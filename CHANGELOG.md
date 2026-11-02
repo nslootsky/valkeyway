@@ -30,6 +30,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **INFO** as a standalone server answers it: the proxy's own clients, and stats and keyspace summed over the cluster.
 - **Real PROXY commands:** STATS, CLIENTINFO and CONFIG GET.
 - **Seed DNS names** are re-resolved at topology checks (`proxy.glide.refresh-topology-from-seeds`), so a re-pointed name moves the proxy to another cluster.
+- **Reading from replicas** (`proxy.replica-reads.*`): for connections that send `READONLY`, or for all, with Glide's read strategies including availability-zone affinity. Off by default. See [configuration](docs/CONFIGURATION.md#reading-from-replicas).
 - **Modules:** JSON, Bloom filters and vector search work through the proxy, tested against `valkey-bundle` nodes. Search needs its coordinator mode, and its replies (`FT.SEARCH`, `FT.AGGREGATE`, `FT.INFO`, `FT._LIST`), which Glide reshapes, are rebuilt to the module's shapes; see [compatibility](docs/COMPATIBILITY.md#modules).
 - **Topology changes** under live traffic are tested: migrations, new shards, failovers, and dead or hung primaries.
 - **Release artifacts:** a GitHub release with the jar, and a multi-architecture image on the GitHub Container Registry.

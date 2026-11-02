@@ -14,7 +14,7 @@ Most commands go to the cluster unchanged, routed by key, with Glide following M
 - **MULTI/EXEC/DISCARD and WATCH/UNWATCH:** the proxy queues a transaction and runs it atomically on the node that owns its keys. Each connection's WATCH runs on a dedicated backend client, so it is private to that connection. Queue-time errors and EXECABORT behave as on a server.
 - **Blocking commands** (BLPOP, BLMOVE, BZPOPMIN, XREAD/XREADGROUP BLOCK, WAIT, ...) run on dedicated backend clients, so they never hold up other clients.
 - **Pub/Sub** (SUBSCRIBE, PSUBSCRIBE, SSUBSCRIBE): the proxy keeps one set of subscriptions to the cluster for all its clients and fans each message out. PUBLISH and SPUBLISH answer with the number of proxy clients that receive the message.
-- **Connection commands are answered by the proxy:** CLIENT (ID, INFO, LIST, KILL, UNBLOCK, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), HELLO, AUTH, RESET, SELECT, READONLY/READWRITE, PING, ECHO, TIME and QUIT. Forwarded, they would act on backend connections that every client shares.
+- **Connection commands are answered by the proxy:** CLIENT (ID, INFO, LIST, KILL, UNBLOCK, GETNAME/SETNAME, SETINFO, REPLY, NO-EVICT, NO-TOUCH), HELLO, AUTH, RESET, SELECT, READONLY/READWRITE (which choose whether the connection reads from replicas, see [CONFIGURATION.md](CONFIGURATION.md#reading-from-replicas)), PING, ECHO, TIME and QUIT. Forwarded, they would act on backend connections that every client shares.
 - **INFO** answers like a standalone server:
   - **From the proxy:** the clients, replication and cluster sections (its own clients, including `blocked_clients`; role master; cluster support disabled).
   - **Summed over the primaries:** stats and keyspace.

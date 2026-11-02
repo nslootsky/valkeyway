@@ -44,20 +44,24 @@ public final class Coalescer {
         this.backend = backend;
     }
 
-    /** Queues {@code args} for {@code db}; must be called on {@code loop}. The reply completes on {@code loop}. */
-    public CompletionStage<Reply> submit(int db, byte[][] args, EventLoop loop) {
-        return perLoop.get().add(db, args, loop);
+    /**
+     * Queues {@code args} for {@code db}'s shared client, the one reading from replicas if
+     * {@code replicaReads}; must be called on {@code loop}. The reply completes on {@code loop}.
+     */
+    public CompletionStage<Reply> submit(int db, boolean replicaReads, byte[][] args, EventLoop loop) {
+        return perLoop.get().add(db << 1 | (replicaReads ? 1 : 0), args, loop);
     }
 
     private record Pending(byte[][] args, CompletableFuture<Reply> reply) {}
 
     private final class PerLoop {
+        /** Keyed by db << 1 | (1 if reading from replicas), one batch per shared client. */
         private final Map<Integer, List<Pending>> byDb = new HashMap<>();
         private boolean flushScheduled;
 
-        CompletionStage<Reply> add(int db, byte[][] args, EventLoop loop) {
+        CompletionStage<Reply> add(int clientKey, byte[][] args, EventLoop loop) {
             CompletableFuture<Reply> reply = new CompletableFuture<>();
-            byDb.computeIfAbsent(db, _ -> new ArrayList<>()).add(new Pending(args, reply));
+            byDb.computeIfAbsent(clientKey, _ -> new ArrayList<>()).add(new Pending(args, reply));
             if (!flushScheduled) {
                 flushScheduled = true;
                 loop.execute(() -> flush(loop));
@@ -74,7 +78,8 @@ public final class Coalescer {
                 }
                 List<Pending> work = new ArrayList<>(pending);
                 pending.clear();
-                GlideClusterClient client = clients.getIfPresent(entry.getKey());
+                int clientKey = entry.getKey();
+                GlideClusterClient client = clients.getIfPresent(clientKey >> 1, (clientKey & 1) == 1);
                 if (client == null) {
                     for (Pending p : work) {
                         p.reply().complete(Reply.error("ERR backend client unavailable, retry"));
