@@ -10,6 +10,15 @@ WORKDIR /app
 COPY target/valkeyway-*.jar app.jar
 USER valkeyway
 
+# Memory: the proxy's own heap is small (tens of MB live), and a small heap matters. Glide frees the
+# native memory behind larger responses only when the GC collects their Java buffers, so a large,
+# rarely collected heap lets native memory pile up past the container's limit. 15% of the limit
+# keeps collections frequent; with MALLOC_ARENA_MAX=2, glibc doesn't keep memory pools per CPU.
+# Measured on 2 CPUs: memory levels off at about 360-480 MB under heavy load with 100 KB values, at
+# any limit from 512 MB. Override either variable to change them. See docs/OPERATIONS.md#sizing.
+ENV MALLOC_ARENA_MAX=2 \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=15 -XX:+ExitOnOutOfMemoryError"
+
 EXPOSE 6379 6380
 
 # No curl or wget in the image: ask the health endpoint over bash's /dev/tcp.

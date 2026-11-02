@@ -57,7 +57,7 @@ The full reference is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), and pas
 |---|---|
 | [Configuration](docs/CONFIGURATION.md) | Every setting, seed nodes and DNS, tuning |
 | [Authentication and TLS](docs/AUTH_AND_TLS.md) | Client passwords, TLS for clients and to the cluster |
-| [Operations](docs/OPERATIONS.md) | Running, health and metrics, what clients see during cluster changes |
+| [Operations](docs/OPERATIONS.md) | Running, sizing the proxy and Valkey, health and metrics, what clients see during cluster changes |
 | [Compatibility](docs/COMPATIBILITY.md) | How commands are handled, differences from a standalone server |
 | [Architecture](docs/ARCHITECTURE.md) | How the proxy works, and links to its design notes |
 | [Development](docs/DEVELOPMENT.md) | Building, testing, running locally |

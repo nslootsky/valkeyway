@@ -15,6 +15,39 @@ Clients connect on port 6379. The management port, 6380, serves health checks an
 
 The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
 
+## Sizing
+
+### The proxy
+
+**Memory.** Give the proxy container at least 512 MB. The image's defaults keep it well inside that:
+
+- **A small heap** (`-XX:MaxRAMPercentage=15`, in `JAVA_TOOL_OPTIONS`). The proxy's own heap is small: about 20 MB live after a collection. Glide frees the native memory behind larger responses only when the garbage collector collects their Java buffers. With a large heap, collections are rare and that native memory piles up: in our tests, a 512 MB heap let the process reach 1.4 GB, while a single collection brought it back to 330 MB. A small heap keeps collections frequent.
+- **`MALLOC_ARENA_MAX=2`**, so glibc doesn't keep memory pools per CPU and hold on to freed memory.
+- **`-XX:+ExitOnOutOfMemoryError`:** if the heap does run out, the process exits and the container restarts, rather than running on in a broken state.
+
+Measured with the release image on 2 CPUs: 500 clients pipelining 512-byte SET/GET, then 200 clients with 100 KB values.
+
+| Memory limit | Heap | Idle | Peak | Throughput |
+|---|---|---|---|---|
+| 512 MB | 126 MB (the JVM's minimum) | ~160 MB | ~470 MB | ~325k requests/s |
+| 1 GB | 154 MB | ~140 MB | ~510 MB | ~330k requests/s |
+
+With the JVM's own default heap (25%) memory follows the limit instead, to about 80% of it, and with a larger heap the container is killed for exceeding its limit. More memory doesn't make the proxy faster. Raise the heap only for very many connections (thousands), together with the limit. To change the defaults, set `JAVA_TOOL_OPTIONS` (keep `-XX:+ExitOnOutOfMemoryError` in it) or `MALLOC_ARENA_MAX`. For the jar outside the image, use the same flags: `MALLOC_ARENA_MAX=2 java -Xmx256m -XX:+ExitOnOutOfMemoryError -jar valkeyway.jar ...`.
+
+**CPU.** Throughput grows with CPUs; about 330k requests/s on 2 CPUs in the test above. Set a CPU request, but avoid a hard CPU limit: throttling shows up directly as latency spikes. If you must set one, use whole CPUs. `proxy.clients.io-threads` (default 2) sets the network threads ([CONFIGURATION.md](CONFIGURATION.md#tuning)).
+
+**Instances.** The proxy scales out: several instances behind a TCP load balancer serve one cluster. Each keeps its own connections to every primary, so size the cluster's `maxclients` for all instances.
+
+### The Valkey nodes
+
+These are general Valkey guidelines; the proxy adds nothing to them.
+
+- **Set `maxmemory` below the container's memory limit.** A node also needs memory for client and replication buffers, the replication backlog and fragmentation, and a background save (RDB, or AOF rewrite) forks the process, whose copy-on-write pages can briefly need up to twice the data's memory. As a rule of thumb, `maxmemory` at about 70-75% of the limit with persistence on, about 85% with it off.
+- **Choose the eviction policy** (`maxmemory-policy`): `allkeys-lru` for a cache, `noeviction` if writes must fail rather than drop data.
+- **Modules:** vector indexes (valkey-search) live in memory; leave extra room for them.
+- **CPU:** 1-2 CPUs per node; Valkey runs commands on one thread, with optional I/O threads.
+- **Kubernetes:** requests equal to limits (Guaranteed QoS), so nodes aren't evicted under memory pressure. Spread primaries and their replicas over different machines and zones. On the hosts, disable transparent huge pages and set `vm.overcommit_memory=1`, so the fork for a background save doesn't fail.
+
 ## Health and metrics
 
 Spring Boot Actuator, on the management port:
