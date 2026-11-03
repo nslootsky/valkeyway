@@ -119,4 +119,11 @@ class ServerErrorsTest {
         assertEquals(false, ServerErrors.isUnfollowedRedirect(new RuntimeException("TRYAGAIN Multiple keys request")));
         assertEquals(false, ServerErrors.isUnfollowedRedirect(new RuntimeException((String) null)));
     }
+
+    /** A long dotted message (a Lua error_reply, say) is not an exception prefix, and can't overflow the stack. */
+    @Test
+    void longDottedMessagesAreLeftAlone() {
+        String dotted = "a.".repeat(100_000) + "a: x";
+        assertEquals("ERR " + dotted, ServerErrors.message(dotted));
+    }
 }
