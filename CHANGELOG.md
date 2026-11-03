@@ -34,7 +34,7 @@ No configuration change is needed: every new setting is off by default. Some beh
 - **Reading from replicas** (`proxy.read-from`, `proxy.client-az`): Glide's read strategies, including availability-zone affinity. Off by default (`primary`). See [configuration](docs/CONFIGURATION.md#reading-from-replicas).
 - **Modules:** JSON, Bloom filters and vector search work through the proxy, tested against `valkey-bundle` nodes. Search needs its coordinator mode, and its replies (`FT.SEARCH`, `FT.AGGREGATE`, `FT.INFO`, `FT._LIST`), which Glide reshapes, are rebuilt to the module's shapes; see [compatibility](docs/COMPATIBILITY.md#modules).
 - **Topology changes** under live traffic are tested: migrations, new shards, failovers, and dead or hung primaries.
-- **Release artifacts:** a GitHub release with the jar, and a multi-architecture image on the GitHub Container Registry.
+- **Release artifacts:** a GitHub release with the jar, and a multi-architecture image on the GitHub Container Registry. Both come with signed build provenance, and the image with an SBOM; see [verifying a release](docs/OPERATIONS.md#verifying-a-release).
 - **Docs:** [configuration](docs/CONFIGURATION.md), [authentication and TLS](docs/AUTH_AND_TLS.md), [operations](docs/OPERATIONS.md), [compatibility](docs/COMPATIBILITY.md) and [architecture](docs/ARCHITECTURE.md). There's also a [catalog of the Glide and Valkey behaviors the proxy relies on](docs/UPSTREAM_ASSUMPTIONS.md).
 
 ### Changed

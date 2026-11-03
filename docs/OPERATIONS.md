@@ -17,6 +17,17 @@ The image is published for linux/amd64 and linux/arm64, tagged with each version
 
 A Java agent (`-javaagent` in `JAVA_TOOL_OPTIONS`) may need a module the runtime leaves out; it then fails at startup with `ClassNotFoundException` or `NoClassDefFoundError` for a JDK class. Datadog's agent needs none (checked with 1.68.1: tracing, profiling and JMX metrics). For one that does, build the image with the modules added, for example `docker build --build-arg EXTRA_MODULES=jdk.attach,java.rmi -t valkeyway .` (`Dockerfile.release` takes the same argument).
 
+### Verifying a release
+
+The jar and the image carry signed build provenance: they were built by this repository's release workflow, from the tagged commit. Check with the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify oci://ghcr.io/nslootsky/valkeyway:0.2.0 --repo nslootsky/valkeyway
+gh attestation verify valkeyway-0.2.0.jar --repo nslootsky/valkeyway
+```
+
+The image also has an SBOM, a list of the software in it: `docker buildx imagetools inspect ghcr.io/nslootsky/valkeyway:0.2.0 --format '{{ json .SBOM }}'`.
+
 ## Sizing
 
 ### The proxy
