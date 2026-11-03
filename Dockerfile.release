@@ -4,14 +4,16 @@
 # A Java runtime with only the modules the proxy uses (about half the size of the full JRE), found
 # by jdeps from the jar itself, so it follows the dependencies. jdeps can't see two modules the
 # JDK only looks up at runtime: jdk.net (extended socket options) and jdk.management.jfr (JFR
-# over JMX).
+# over JMX). Add others with --build-arg EXTRA_MODULES=a,b (e.g. jdk.attach, for a Java agent that
+# needs it).
 FROM docker.io/eclipse-temurin:25-jdk AS runtime
+ARG EXTRA_MODULES=""
 COPY target/valkeyway-*.jar /tmp/app.jar
 RUN mkdir /tmp/app && cd /tmp/app && jar xf /tmp/app.jar \
     && modules="$(jdeps --ignore-missing-deps --print-module-deps --multi-release 25 -q \
         --class-path 'BOOT-INF/lib/*' BOOT-INF/classes BOOT-INF/lib/*.jar)" \
     && echo "Java modules: $modules" \
-    && jlink --add-modules "$modules,jdk.net,jdk.management.jfr" \
+    && jlink --add-modules "$modules,jdk.net,jdk.management.jfr${EXTRA_MODULES:+,$EXTRA_MODULES}" \
         --strip-debug --no-man-pages --no-header-files --compress=zip-6 --generate-cds-archive \
         --output /runtime
 
