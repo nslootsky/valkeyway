@@ -89,7 +89,7 @@ public class HelloCommand implements InlineCommandHandler {
                 return setName;
             }
         }
-        connection.protocol((int) version);
+        connection.protocol(Math.toIntExact(version)); // 2 or 3: checked above
         return new Reply.MapReply(List.of(
                 Reply.bulk("server"), Reply.bulk("valkeyway"),
                 Reply.bulk("version"), Reply.bulk(ProxyVersion.get()),
