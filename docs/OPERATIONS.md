@@ -13,7 +13,9 @@ java -jar valkeyway.jar --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
 
 Clients connect on port 6379. The management port, 6380, serves health checks and metrics. Settings are described in [CONFIGURATION.md](CONFIGURATION.md), and passwords and TLS in [AUTH_AND_TLS.md](AUTH_AND_TLS.md).
 
-The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint.
+The image is published for linux/amd64 and linux/arm64, tagged with each version and `latest`. It runs as a non-root user and has a Docker `HEALTHCHECK` on the health endpoint. It is based on Debian 13 slim, with a Java runtime cut down by jlink to the modules the proxy uses.
+
+A Java agent (`-javaagent` in `JAVA_TOOL_OPTIONS`) may need a module the runtime leaves out; it then fails at startup with `ClassNotFoundException` or `NoClassDefFoundError` for a JDK class. Datadog's agent needs none (checked with 1.68.1: tracing, profiling and JMX metrics). For one that does, build the image with the modules added, for example `docker build --build-arg EXTRA_MODULES=jdk.attach,java.rmi -t valkeyway .` (`Dockerfile.release` takes the same argument).
 
 ## Sizing
 
