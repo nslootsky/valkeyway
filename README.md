@@ -7,7 +7,9 @@
   </p>
 </div>
 
-ValkeyWay is a proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone Valkey server. Applications and tools that only speak to one server connect to it unchanged, with no cluster-aware client needed, while the data lives in a cluster.
+ValkeyWay is a proxy that presents a [Valkey cluster](https://valkey.io/topics/cluster-tutorial/) as a single standalone server. Applications and tools that only speak to one server connect to it unchanged, with no cluster-aware client needed, while the data lives in a cluster. Any Valkey or Redis client works.
+
+Multi-key commands such as MGET, MSET and DEL, which a cluster rejects with a `CROSSSLOT` error when their keys are on different slots, just work. SELECT works too, on clusters with multiple databases (Valkey 9, including Amazon ElastiCache). It runs in front of self-managed and managed clusters, such as ElastiCache and Google Cloud Memorystore.
 
 It is built on Java 25 and Netty, and uses [valkey-glide](https://github.com/valkey-io/valkey-glide) to talk to the cluster.
 
