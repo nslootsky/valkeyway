@@ -28,9 +28,13 @@ public final class ServerErrors {
 
     // [upstream:G1] Glide error message formats.
 
-    /** Java exception class prefix, e.g. "glide.api.models.exceptions.RequestException: ". */
+    /**
+     * Java exception class prefix, e.g. "glide.api.models.exceptions.RequestException: ". At most 20
+     * package segments: Java's regex engine recurses per repetition, so an unbounded one would
+     * overflow the stack on a long dotted message.
+     */
     private static final Pattern EXCEPTION_PREFIX =
-            Pattern.compile("^(?:[A-Za-z_$][\\w$]*\\.)+[A-Za-z_$][\\w$]*: ");
+            Pattern.compile("^(?:[A-Za-z_$][\\w$]*\\.){1,20}[A-Za-z_$][\\w$]*: ");
 
     /** Glide's wrapper around server errors it recognises: "<description>- <Kind>: <detail>". */
     private static final Pattern GLIDE_KIND_ERROR = Pattern.compile(

@@ -109,11 +109,16 @@ public final class BlockingCommands {
         return Optional.empty();
     }
 
+    /**
+     * Valkey's string2ld refuses numbers this long before parsing them. So does the proxy, and the
+     * patterns below can't backtrack either: parsing happens on the network thread.
+     */
+    private static final int MAX_NUMBER_LENGTH = 5 * 1024 - 1; // MAX_LONG_DOUBLE_CHARS, less the terminator
     /** Decimal numbers as Valkey's string2ld accepts them (no hex, no Java suffixes like "1d"). */
-    private static final Pattern DECIMAL = Pattern.compile("[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?");
+    private static final Pattern DECIMAL = Pattern.compile("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?");
     private static final Pattern INFINITY = Pattern.compile("[+-]?inf(inity)?", Pattern.CASE_INSENSITIVE);
     /** C's hexadecimal floating point, which strtold accepts too: 0x1A, 0x1.8p3. */
-    private static final Pattern HEX = Pattern.compile("[+-]?0[xX]([0-9a-fA-F]+\\.?[0-9a-fA-F]*|\\.[0-9a-fA-F]+)([pP][+-]?\\d+)?");
+    private static final Pattern HEX = Pattern.compile("[+-]?0[xX]([0-9a-fA-F]+(\\.[0-9a-fA-F]*)?|\\.[0-9a-fA-F]+)([pP][+-]?\\d+)?");
 
     /**
      * A timeout in seconds; such commands (BLPOP & co.) answer a null array when it expires. Valkey's
@@ -124,12 +129,15 @@ public final class BlockingCommands {
         if (index < 1 || index >= args.length) {
             return new Spec(index, TimeoutUnit.SECONDS, 0, TimeoutReply.NULL, null); // arity is checked separately
         }
+        if (args[index].length == 0 || args[index].length > MAX_NUMBER_LENGTH) {
+            return invalid(index, TimeoutUnit.SECONDS, TimeoutReply.NULL, "ERR timeout is not a float or out of range");
+        }
         String text = new String(args[index], StandardCharsets.US_ASCII);
         double seconds;
         if (DECIMAL.matcher(text).matches()) {
             seconds = Double.parseDouble(text);
         } else if (HEX.matcher(text).matches()) {
-            seconds = Double.parseDouble(text.matches(".*[pP].*") ? text : text + "p0");
+            seconds = Double.parseDouble(text.indexOf('p') >= 0 || text.indexOf('P') >= 0 ? text : text + "p0");
         } else if (INFINITY.matcher(text).matches()) {
             seconds = text.startsWith("-") ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
         } else {

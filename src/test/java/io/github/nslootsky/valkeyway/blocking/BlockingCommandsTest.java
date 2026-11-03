@@ -97,7 +97,37 @@ class BlockingCommandsTest {
         assertNull(spec("BLPOP k 0").error());
         assertNull(spec("BLPOP k 1.5e1").error());
         assertNull(spec("BLPOP k .5").error());
+        assertNull(spec("BLPOP k 1.").error());
+        assertNull(spec("BLPOP k +2E-1").error());
         assertNull(spec("XREAD BLOCK 0 STREAMS s $").error());
+        assertEquals(12_000, spec("BLPOP k 0x1.8p3").timeoutMillis());
+        assertEquals(500, spec("BLPOP k 0x.8").timeoutMillis());
+        assertEquals(1_000, spec("BLPOP k 0X1.").timeoutMillis());
+    }
+
+    /** Valkey's string2ld refuses 5120 characters or more (MAX_LONG_DOUBLE_CHARS) before parsing. */
+    @Test
+    void timeoutsAsLongAsValkeyRefusesAreRefused() {
+        assertNull(spec("BLPOP k " + "0".repeat(5119)).error());
+        assertEquals("ERR timeout is not a float or out of range", spec("BLPOP k " + "0".repeat(5120)).error());
+        assertEquals("ERR timeout is not a float or out of range", spec("BLPOP k " + "9".repeat(100_000) + "x").error());
+    }
+
+    /**
+     * Timeouts are parsed on the network thread, so no input may take long. These made the old
+     * patterns backtrack: about 100 ms each at this length, quadratic beyond.
+     */
+    @Test
+    void nearMissTimeoutsParseQuickly() {
+        String[] nearMisses = {"9".repeat(5000) + "x", "0x" + "0".repeat(5000) + "x", "1." + "1".repeat(5000) + "x",
+                "0x0." + "0".repeat(5000) + "x"};
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(1), () -> {
+            for (int i = 0; i < 25; i++) {
+                for (String text : nearMisses) {
+                    assertEquals("ERR timeout is not a float or out of range", spec("BLPOP k " + text).error());
+                }
+            }
+        });
     }
 
     @Test
