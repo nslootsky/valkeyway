@@ -3,13 +3,16 @@ name: Release
 # Pushing a version tag (v0.2.0) builds and tests the proxy, publishes a GitHub release with the
 # jar and the CHANGELOG.md section for that version, and pushes the image to the GitHub Container
 # Registry as ghcr.io/<owner>/valkeyway:<version> and :latest, for linux/amd64 and linux/arm64.
+# The jar and the image get signed build provenance (gh attestation verify), and the image an SBOM.
 on:
   push:
     tags: ['v*']
 
 permissions:
-  contents: write   # create the release
-  packages: write   # push the image
+  contents: write       # create the release
+  packages: write       # push the image
+  id-token: write       # sign the provenance (Sigstore)
+  attestations: write   # store it
 
 jobs:
   release:
@@ -73,12 +76,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push the image
+        id: image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.release
           platforms: linux/amd64,linux/arm64
           push: true
+          sbom: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/valkeyway:${{ env.VERSION }}
             ghcr.io/${{ github.repository_owner }}/valkeyway:latest
@@ -86,6 +91,21 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}
             org.opencontainers.image.licenses=MIT
+
+      # Provenance: which workflow, commit and tag built them, signed and stored with GitHub (for the
+      # image also in the registry). Storage records need an organization-owned repository.
+      - name: Attest the jar
+        uses: actions/attest@v4
+        with:
+          subject-path: target/valkeyway-${{ env.VERSION }}.jar
+
+      - name: Attest the image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/valkeyway
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
 
       - name: Create the GitHub release
         env:
