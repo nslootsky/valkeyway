@@ -1,0 +1,57 @@
+name: Bug report
+description: Something the proxy does wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The commands or steps that show the problem, what you expected, and what happened instead.
+      placeholder: |
+        valkey-cli -p 6379 MGET a b c
+        Expected three values, got ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ValkeyWay version
+      description: "`INFO server` shows it (valkeyway_version)."
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: running
+    attributes:
+      label: How you run it
+      options:
+        - Docker image
+        - Jar
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: cluster
+    attributes:
+      label: The cluster
+      description: Valkey version, where it runs (self-managed, ElastiCache, Memorystore, ...), primaries and replicas.
+      placeholder: Valkey 9.0.1 on ElastiCache, 3 primaries with 1 replica each
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client library
+      placeholder: redis-py 6.2, valkey-cli, Jedis 6.0 ...
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Settings you changed from the defaults. Remove passwords and other secrets.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Proxy log
+      description: Errors or warnings from the proxy's log around the time of the problem.
+      render: text

@@ -2,7 +2,7 @@
 
 All notable changes to ValkeyWay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - 2026-11-01
+## [0.2.0] - 2026-11-03
 
 A new client protocol layer, and most of what a standalone Valkey server offers: RESP3, Pub/Sub, transactions with WATCH, TLS and passwords. Replies are checked against real nodes byte for byte, and against [Valkey's own test suite](docs/VALKEY_TEST_SUITE.md).
 
