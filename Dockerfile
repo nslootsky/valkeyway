@@ -13,14 +13,31 @@ RUN ./mvnw dependency:go-offline -q
 COPY src src
 RUN ./mvnw package -DskipTests -q
 
-# Run stage: glibc-based, like the release image (Glide has no aarch64 musl library)
-FROM docker.io/eclipse-temurin:25-jre
+# A Java runtime with only the modules the proxy uses (about half the size of the full JRE), found
+# by jdeps from the jar itself, so it follows the dependencies. jdeps can't see two modules the
+# JDK only looks up at runtime: jdk.net (extended socket options) and jdk.management.jfr (JFR
+# over JMX).
+FROM docker.io/eclipse-temurin:25-jdk AS runtime
+COPY --from=build /app/target/valkeyway-*.jar /tmp/app.jar
+RUN mkdir /tmp/app && cd /tmp/app && jar xf /tmp/app.jar \
+    && modules="$(jdeps --ignore-missing-deps --print-module-deps --multi-release 25 -q \
+        --class-path 'BOOT-INF/lib/*' BOOT-INF/classes BOOT-INF/lib/*.jar)" \
+    && echo "Java modules: $modules" \
+    && jlink --add-modules "$modules,jdk.net,jdk.management.jfr" \
+        --strip-debug --no-man-pages --no-header-files --compress=zip-6 --generate-cds-archive \
+        --output /runtime
 
-# jemalloc, linked to one path for every architecture (it installs under /usr/lib/<arch>-linux-gnu).
+# Run stage: glibc-based, like the release image (Glide has no aarch64 musl library)
+FROM docker.io/library/debian:13-slim
+
+# jemalloc, linked to one path for every architecture (it installs under /usr/lib/<arch>-linux-gnu),
+# and the system CA certificates, for backend TLS (proxy.backend.tls without a ca-file).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libjemalloc2 \
+    && apt-get install -y --no-install-recommends libjemalloc2 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s "$(ls /usr/lib/*-linux-gnu/libjemalloc.so.2)" /usr/local/lib/libjemalloc.so.2
+ENV JAVA_HOME=/opt/java/openjdk PATH=/opt/java/openjdk/bin:$PATH LANG=C.UTF-8
+COPY --from=runtime /runtime $JAVA_HOME
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin valkeyway
 WORKDIR /app
 COPY --from=build /app/target/valkeyway-*.jar app.jar
