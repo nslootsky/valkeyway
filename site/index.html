@@ -362,7 +362,7 @@ footer p { margin: 0; }
       <p class="intro">Most applications see no difference from a standalone server.</p>
       <div class="plate">
         <dl class="features">
-          <div><dt>Cross-slot commands</dt><dd>MGET, MSET, DEL and other multi-key commands, which a cluster rejects with <code>CROSSSLOT</code>, just work.</dd></div>
+          <div><dt>Cross-slot commands</dt><dd>MGET, MSET, DEL, UNLINK, EXISTS and TOUCH, which a cluster rejects with <code>CROSSSLOT</code> when their keys are in different slots, are split per slot and answered as one reply.</dd></div>
           <div><dt>Multiple databases</dt><dd>SELECT per connection, on clusters with numbered databases: Valkey 9, including Amazon ElastiCache.</dd></div>
           <div><dt>Transactions and WATCH</dt><dd>Atomic when a transaction's keys share a slot. SCAN covers the whole cluster.</dd></div>
           <div><dt>Pub/Sub</dt><dd>Channels, patterns and sharded channels, with RESP2 and RESP3 clients.</dd></div>
@@ -388,7 +388,8 @@ footer p { margin: 0; }
       </div>
       <div>
         <h2>What it can't change</h2>
-        <p>A cluster can't make one atomic operation out of keys in different hash slots, and neither can a proxy in front of it. Hash tags, such as <code>{user1}:name</code> and <code>{user1}:email</code>, keep keys that are used together in one slot.</p>
+        <p>A cluster can't make one atomic operation out of keys in different hash slots, and neither can a proxy in front of it. A transaction across slots is rejected with <code>CROSSSLOT</code>, as on a cluster node, unless you set <code>proxy.transactions.cross-slot: pipeline</code>: its commands then run in order, without atomicity. Commands the proxy doesn't split, such as RENAME, SMOVE or SUNIONSTORE, need their keys in one slot too.</p>
+        <p>Hash tags, such as <code>{user1}:name</code> and <code>{user1}:email</code>, keep keys that are used together in one slot.</p>
         <p>Commands that administer a single node, such as SHUTDOWN or CONFIG SET, are refused by default. The <a href="https://github.com/nslootsky/valkeyway/blob/main/docs/COMPATIBILITY.md">compatibility notes</a> list every difference from a standalone server.</p>
       </div>
     </div>
