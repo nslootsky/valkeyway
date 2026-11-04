@@ -328,6 +328,68 @@ class RealClientsTest extends IntegrationTestBase {
         }
     }
 
+    // --- A database chosen in the connection settings ---
+
+    /**
+     * Clients given a database in their settings select it in their connection handshake, along with
+     * HELLO and CLIENT SETINFO, rather than through a SELECT call the application makes.
+     */
+    @ParameterizedTest
+    @EnumSource(Protocol.class)
+    void jedisDatabaseFromTheConnectionSettings(Protocol protocol) {
+        String key = "rc:jdb:" + protocol;
+        try (Jedis j = new Jedis(PROXY, DefaultJedisClientConfig.builder().database(5)
+                .protocol(protocol == Protocol.RESP3 ? RedisProtocol.RESP3 : RedisProtocol.RESP2)
+                .socketTimeoutMillis(5000).build())) {
+            assertEquals("OK", j.set(key, "five"));
+            assertEquals("five", j.get(key));
+        }
+        assertOnlyInDatabase(key, "five", 5);
+    }
+
+    /** Lettuce also selects the database again when it reconnects, as after the proxy closes its connection. */
+    @ParameterizedTest
+    @EnumSource(Protocol.class)
+    void lettuceDatabaseFromTheConnectionSettings(Protocol protocol) throws Exception {
+        String key = "rc:ldb:" + protocol;
+        RedisClient client = RedisClient.create(RedisURI.builder().withHost("127.0.0.1").withPort(RESP_PORT)
+                .withDatabase(6).build());
+        client.setOptions(ClientOptions.builder()
+                .protocolVersion(protocol == Protocol.RESP3 ? ProtocolVersion.RESP3 : ProtocolVersion.RESP2).build());
+        try (StatefulRedisConnection<String, String> conn = client.connect()) {
+            RedisCommands<String, String> c = conn.sync();
+            assertEquals("OK", c.set(key, "six"));
+            assertEquals("six", c.get(key));
+
+            long before = c.clientId();
+            try (Jedis admin = jedis(Protocol.RESP2)) {
+                admin.sendCommand(redis.clients.jedis.Protocol.Command.CLIENT, "KILL", "ID", Long.toString(before));
+            }
+            assertTrue(waitFor(() -> {
+                try {
+                    return c.clientId() != before;
+                } catch (RuntimeException reconnecting) {
+                    return false;
+                }
+            }), "Lettuce reconnected");
+            assertEquals("OK", c.set(key + ":after", "six again"));
+        } finally {
+            client.shutdown(Duration.ZERO, Duration.ofSeconds(2));
+        }
+        assertOnlyInDatabase(key, "six", 6);
+        assertOnlyInDatabase(key + ":after", "six again", 6);
+    }
+
+    /** The key is in {@code db}, read through a plain connection that selects it, and not in database 0. */
+    private static void assertOnlyInDatabase(String key, String value, int db) {
+        try (Jedis plain = jedis(Protocol.RESP2)) {
+            assertNull(plain.get(key), "not in database 0");
+            plain.select(db);
+            assertEquals(value, plain.get(key), "in database " + db);
+            plain.del(key);
+        }
+    }
+
     private static boolean waitFor(java.util.function.BooleanSupplier condition) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
