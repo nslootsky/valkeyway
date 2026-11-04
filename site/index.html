@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ValkeyWay: a Valkey cluster as one server</title>
+<meta name="description" content="ValkeyWay is a proxy that lets any Valkey or Redis client use a Valkey cluster as if it were a single standalone server, with cross-slot commands, multiple databases, transactions and Pub/Sub.">
+<meta name="theme-color" content="#e3e7eb">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ValkeyWay: a Valkey cluster as one server">
+<meta property="og:description" content="Any Valkey or Redis client, a whole cluster behind it. Cross-slot commands, multiple databases, transactions and Pub/Sub.">
+<meta property="og:image" content="https://nslootsky.github.io/valkeyway/assets/card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preload" href="assets/archivo.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face {
+  font-family: "Archivo";
+  src: url("assets/archivo.woff2") format("woff2");
+  font-weight: 400 800;
+  font-stretch: 100% 125%;
+  font-display: swap;
+}
+
+:root {
+  --hull: #e3e7eb;
+  --hull-light: #eef1f3;
+  --steel: #c3cad1;
+  --steel-edge: #9aa4ae;
+  --ink: #1c2430;
+  --ink-soft: #46515f;
+  --space: #0e1630;
+  --space-deep: #0a1024;
+  --path: #5fd3f3;
+  --path-ink: #17577f;
+  --key: #e8b53a;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 400 1.0625rem/1.6 "Archivo", system-ui, sans-serif;
+  font-stretch: 100%;
+  /* Brushed steel: fine horizontal grain over the hull colour. */
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.18) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, var(--hull-light), var(--hull) 40rem);
+  background-color: var(--hull);
+}
+
+a { color: var(--path-ink); text-underline-offset: .18em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--path-ink); outline-offset: 3px; border-radius: 4px; }
+
+.wrap { width: min(72rem, 100% - 2.5rem); margin-inline: auto; }
+
+/* Header */
+.top { padding-block: 1.25rem; }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: .6rem; color: var(--ink); text-decoration: none;
+  font-weight: 750; font-stretch: 125%; font-size: 1.15rem; letter-spacing: .01em; }
+.brand img { width: 32px; height: 32px; }
+.top nav { display: flex; gap: 1.5rem; font-size: .975rem; }
+.top nav a { color: var(--ink); text-decoration: none; }
+.top nav a:hover { color: var(--path-ink); text-decoration: underline; }
+
+/* Hero */
+.hero { padding-block: 2rem 2.5rem; }
+.hero .wrap { display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: center; }
+.hero-logo { justify-self: center; width: min(19rem, 72vw); height: auto; order: -1;
+  filter: drop-shadow(0 18px 28px rgba(14, 22, 48, .28)); }
+h1 {
+  margin: 0;
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: clamp(2.3rem, 5.4vw + .6rem, 4.4rem);
+  line-height: 1.02;
+  letter-spacing: -.012em;
+  max-width: 13ch;
+}
+.lede { margin: 1.4rem 0 0; font-size: clamp(1.08rem, .4vw + 1rem, 1.25rem); max-width: 34rem; color: var(--ink-soft); }
+.actions { display: flex; flex-wrap: wrap; gap: .85rem; margin-top: 2rem; }
+.button {
+  display: inline-flex; align-items: center; gap: .55rem;
+  padding: .8rem 1.3rem; border-radius: 999px;
+  font-weight: 700; font-stretch: 112%; text-decoration: none; color: var(--ink);
+  border: 1px solid var(--steel-edge); background: var(--hull-light);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(28,36,48,.12);
+}
+.button:hover { text-decoration: none; background: #fff; }
+.button.primary { background: var(--key); border-color: #b98a1d; box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 2px 6px rgba(140,100,10,.25); }
+.button.primary:hover { background: #f0c453; }
+.button svg { width: 1.1em; height: 1.1em; }
+.release { margin-top: 1.4rem; font-size: .95rem; color: var(--ink-soft); }
+
+@media (min-width: 52rem) {
+  .hero { padding-block: 3rem 3.5rem; }
+  .hero .wrap { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 3rem; }
+  .hero-logo { order: 0; width: min(25rem, 100%); justify-self: end; }
+}
+
+/* Sections */
+section { padding-block: 3.5rem; }
+h2 {
+  margin: 0 0 .9rem;
+  font-weight: 750; font-stretch: 118%;
+  font-size: clamp(1.55rem, 1.6vw + 1rem, 2.15rem);
+  line-height: 1.15;
+  letter-spacing: -.005em;
+}
+.intro { margin: 0 0 2rem; max-width: 40rem; color: var(--ink-soft); }
+
+/* A plate: a steel panel fastened at its corners. The rivets mark a panel's edge, nothing else. */
+.plate {
+  position: relative;
+  background: linear-gradient(180deg, #f3f5f7, #e8ecef);
+  border: 1px solid var(--steel-edge);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 #fff, 0 1px 3px rgba(28,36,48,.10);
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+}
+.plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --rivet: radial-gradient(circle at 40% 35%, #fdfdfd 0 1.2px, #aeb7c0 2.2px, #7d8893 3.6px, transparent 4px);
+  background: var(--rivet), var(--rivet), var(--rivet), var(--rivet);
+  background-size: 9px 9px;
+  background-position: 10px 10px, calc(100% - 10px) 10px, 10px calc(100% - 10px), calc(100% - 10px) calc(100% - 10px);
+  background-repeat: no-repeat;
+}
+
+/* A porthole: the only places where space shows through the hull. Its frame is bolted like the
+   logo's hatch, and set into the hull rather than floating above it. */
+.porthole {
+  position: relative;
+  max-width: 50rem;
+  border-radius: 30px;
+  padding: 18px;
+  border: 1px solid var(--steel-edge);
+  background: linear-gradient(160deg, #f6f7f9, #c3cad1 55%, #dde2e6);
+  box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(28,36,48,.12), 0 2px 0 #fff, 0 1px 4px rgba(28,36,48,.14);
+}
+.porthole::before {
+  content: "";
+  position: absolute;
+  inset: 2px 30px;
+  pointer-events: none;
+  --bolt: radial-gradient(circle at 50% 50%, #f4f6f8 0 1.4px, #a9b2bb 2.6px, #6f7a85 4px, transparent 4.6px);
+  background: var(--bolt) top / 46px 14px space no-repeat, var(--bolt) bottom / 46px 14px space no-repeat;
+}
+.porthole .glass {
+  border-radius: 16px;
+  border: 2px solid #59636e;
+  box-shadow: inset 0 3px 10px rgba(0,0,0,.45);
+  /* A few stars, at the right edge only, where they can't be mistaken for punctuation. */
+  background:
+    radial-gradient(1px 1px at 96% 14%, #fff 99%, transparent),
+    radial-gradient(1.5px 1.5px at 93% 46%, #ffd27a 99%, transparent),
+    radial-gradient(1px 1px at 97% 78%, #9ec8ff 99%, transparent),
+    radial-gradient(1.5px 1.5px at 91% 90%, #ff8c9a 99%, transparent),
+    radial-gradient(120% 90% at 85% 0%, #1b2756, transparent 60%),
+    var(--space);
+  color: #e8eef7;
+  overflow-x: auto;
+}
+
+/* Quick start */
+.terminal { margin: 0; padding: 1.4rem 1.5rem; font: 400 .95rem/1.7 var(--mono); white-space: pre; }
+@media (max-width: 40rem) { .terminal { font-size: .82rem; padding: 1.1rem 1.1rem; } }
+.terminal .prompt { color: var(--path); user-select: none; }
+.terminal .comment { color: #8fa3c0; }
+.terminal .out { color: #b9c6d8; }
+.notes { margin-top: 1.4rem; color: var(--ink-soft); max-width: 44rem; }
+.notes p { margin: .4rem 0; }
+code { font-family: var(--mono); font-size: .92em; background: rgba(154,164,174,.22); padding: .08em .35em; border-radius: 4px; }
+
+/* How it works */
+.flow { display: grid; gap: 2rem; align-items: center; }
+.flow svg { width: 100%; height: auto; max-width: 40rem; }
+.flow .narrow { max-width: 22rem; }
+.flow .wide { display: none; }
+@media (min-width: 40rem) { .flow .wide { display: block; } .flow .narrow { display: none; } }
+.flow p { margin: 0 0 .8rem; }
+@media (min-width: 52rem) { .flow { grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 3rem; } }
+.wire { stroke-dasharray: 5 7; animation: flow 1.6s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -24; } }
+@media (prefers-reduced-motion: reduce) { .wire { animation: none; } }
+
+/* Features: rows on one plate, not a grid of cards. */
+.features { display: grid; gap: 0; margin: 0; }
+.features div { padding: 1.05rem 0; border-top: 1px solid rgba(154,164,174,.55); display: grid; gap: .25rem; align-content: start; }
+.features div:first-child { border-top: 0; padding-top: .2rem; }
+.features dt { font-weight: 700; font-stretch: 112%; }
+.features dd { margin: 0; color: var(--ink-soft); }
+@media (min-width: 52rem) {
+  .features { grid-template-columns: 1fr 1fr; column-gap: 3rem; }
+  .features div:nth-child(2) { border-top: 0; padding-top: .2rem; }
+}
+
+/* Where it runs, and limits */
+.pair { display: grid; gap: 2rem; }
+@media (min-width: 52rem) { .pair { grid-template-columns: 1fr 1fr; gap: 3rem; } }
+.pair h2 { font-size: clamp(1.35rem, 1vw + 1rem, 1.7rem); }
+.pair p { margin: 0 0 .8rem; max-width: 36rem; }
+.runs { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+.runs li { padding: .3rem .8rem; border: 1px solid var(--steel-edge); border-radius: 999px; background: var(--hull-light); font-size: .95rem; }
+
+/* Footer */
+footer { padding-block: 2.5rem 3rem; margin-top: 2rem; border-top: 1px solid rgba(154,164,174,.6); font-size: .95rem; color: var(--ink-soft); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem 2rem; }
+footer nav { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; }
+footer p { margin: 0; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="assets/favicon-64.png" alt="" width="32" height="32">ValkeyWay</a>
+    <nav aria-label="Main">
+      <a href="https://github.com/nslootsky/valkeyway#documentation">Docs</a>
+      <a href="https://github.com/nslootsky/valkeyway/releases">Releases</a>
+      <a href="https://github.com/nslootsky/valkeyway">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <h1>Your Valkey cluster, as one server.</h1>
+        <p class="lede">ValkeyWay is a proxy in front of a Valkey cluster. Applications and tools that only talk to a single server connect to it unchanged, with any Valkey or Redis client, while the data lives in the cluster.</p>
+        <div class="actions">
+          <a class="button primary" href="#start">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M11.5 11.5 21 21M17 17l2.5-2.5M14.5 14.5 17 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+            Get started
+          </a>
+          <a class="button" href="https://github.com/nslootsky/valkeyway">View on GitHub</a>
+        </div>
+        <p class="release">Open source under the MIT license. Latest release: <a href="https://github.com/nslootsky/valkeyway/releases/tag/v0.2.0">0.2.0</a>.</p>
+      </div>
+      <img class="hero-logo" src="assets/logo-480.webp" srcset="assets/logo-480.webp 480w, assets/logo-960.webp 960w" sizes="(min-width: 52rem) 25rem, 72vw" width="480" height="480" alt="The ValkeyWay logo: an open round hatch door, showing a glowing path with a key on it that leads into a cluster of stars.">
+    </div>
+  </div>
+
+  <section id="start">
+    <div class="wrap">
+      <h2>Run it in front of your cluster</h2>
+      <p class="intro">Point it at a few of the cluster's nodes and connect as you would to a single server.</p>
+      <div class="porthole">
+        <div class="glass">
+<pre class="terminal"><span class="prompt">$ </span>docker run -d --name valkeyway -p 6379:6379 -p 6380:6380 \
+    ghcr.io/nslootsky/valkeyway:latest \
+    --proxy.cluster-nodes=node1:7000,node2:7001,node3:7002
+
+<span class="prompt">$ </span>valkey-cli MSET key1 a key2 b key3 c   <span class="comment"># keys on different nodes</span>
+<span class="out">OK</span>
+<span class="prompt">$ </span>valkey-cli MGET key1 key2 key3        <span class="comment"># one reply</span>
+<span class="out">1) "a"
+2) "b"
+3) "c"</span></pre>
+        </div>
+      </div>
+      <div class="notes">
+        <p>Clients connect on port 6379. Port 6380 serves health checks and Prometheus metrics. Only the seed nodes are required; every other setting has a default, described in the <a href="https://github.com/nslootsky/valkeyway/blob/main/docs/CONFIGURATION.md">configuration reference</a>.</p>
+        <p>The image is published for linux/amd64 and linux/arm64. The jar runs on Java 25.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap flow">
+      <svg class="wide" viewBox="0 0 640 300" role="img" aria-labelledby="flow-title">
+        <title id="flow-title">Clients connect to ValkeyWay as to one server; ValkeyWay routes each command to the cluster node that holds its keys.</title>
+        <g font-family="Archivo, system-ui, sans-serif" font-size="15" fill="#1c2430">
+          <g>
+            <rect x="8" y="46" width="132" height="40" rx="20" fill="#eef1f3" stroke="#9aa4ae"/>
+            <text x="74" y="71" text-anchor="middle">Your app</text>
+            <rect x="8" y="130" width="132" height="40" rx="20" fill="#eef1f3" stroke="#9aa4ae"/>
+            <text x="74" y="155" text-anchor="middle">valkey-cli</text>
+            <rect x="8" y="214" width="132" height="40" rx="20" fill="#eef1f3" stroke="#9aa4ae"/>
+            <text x="74" y="239" text-anchor="middle">Any client</text>
+          </g>
+          <g fill="none" stroke="#17577f" stroke-width="2">
+            <path class="wire" d="M140 66 C190 66 196 150 236 150"/>
+            <path class="wire" d="M140 150 H236"/>
+            <path class="wire" d="M140 234 C190 234 196 150 236 150"/>
+          </g>
+          <image href="assets/logo-480.webp" x="226" y="86" width="128" height="128"/>
+          <text x="290" y="232" text-anchor="middle" font-weight="700">ValkeyWay</text>
+          <g fill="none" stroke="#17577f" stroke-width="2">
+            <path class="wire" d="M342 150 C390 150 392 78 430 78"/>
+            <path class="wire" d="M342 150 H430"/>
+            <path class="wire" d="M342 150 C390 150 392 222 430 222"/>
+          </g>
+          <rect x="430" y="28" width="202" height="244" rx="22" fill="#0e1630" stroke="#59636e" stroke-width="2"/>
+          <g fill="#e8eef7" font-size="14">
+            <circle cx="456" cy="78" r="7" fill="#5fd3f3"/><text x="472" y="83">Shard 1</text>
+            <circle cx="456" cy="150" r="7" fill="#5fd3f3"/><text x="472" y="155">Shard 2</text>
+            <circle cx="456" cy="222" r="7" fill="#5fd3f3"/><text x="472" y="227">Shard 3</text>
+            <g fill="#ffffff"><circle cx="604" cy="52" r="1.6"/><circle cx="580" cy="118" r="1.2"/><circle cx="612" cy="190" r="1.6"/><circle cx="560" cy="250" r="1.2"/></g>
+            <circle cx="590" cy="88" r="1.8" fill="#ffd27a"/><circle cx="600" cy="236" r="1.8" fill="#ff8c9a"/>
+          </g>
+          <text x="531" y="290" text-anchor="middle" fill="#46515f" font-size="13">Valkey cluster</text>
+        </g>
+      </svg>
+      <svg class="narrow" viewBox="0 0 360 470" role="img" aria-labelledby="flow-title-narrow">
+        <title id="flow-title-narrow">Clients connect to ValkeyWay as to one server; ValkeyWay routes each command to the cluster node that holds its keys.</title>
+        <g font-family="Archivo, system-ui, sans-serif" font-size="15" fill="#1c2430">
+          <rect x="4" y="8" width="108" height="38" rx="19" fill="#eef1f3" stroke="#9aa4ae"/>
+          <text x="58" y="32" text-anchor="middle">Your app</text>
+          <rect x="126" y="8" width="108" height="38" rx="19" fill="#eef1f3" stroke="#9aa4ae"/>
+          <text x="180" y="32" text-anchor="middle">valkey-cli</text>
+          <rect x="248" y="8" width="108" height="38" rx="19" fill="#eef1f3" stroke="#9aa4ae"/>
+          <text x="302" y="32" text-anchor="middle">Any client</text>
+          <g fill="none" stroke="#17577f" stroke-width="2">
+            <path class="wire" d="M58 46 C58 80 180 70 180 104"/>
+            <path class="wire" d="M180 46 V104"/>
+            <path class="wire" d="M302 46 C302 80 180 70 180 104"/>
+          </g>
+          <image href="assets/logo-480.webp" x="124" y="100" width="112" height="112"/>
+          <text x="180" y="230" text-anchor="middle" font-weight="700">ValkeyWay</text>
+          <g fill="none" stroke="#17577f" stroke-width="2">
+            <path class="wire" d="M180 242 C180 272 66 264 66 300"/>
+            <path class="wire" d="M180 242 V300"/>
+            <path class="wire" d="M180 242 C180 272 294 264 294 300"/>
+          </g>
+          <rect x="4" y="300" width="352" height="140" rx="22" fill="#0e1630" stroke="#59636e" stroke-width="2"/>
+          <g fill="#e8eef7" font-size="15" text-anchor="middle">
+            <circle cx="66" cy="350" r="8" fill="#5fd3f3"/><text x="66" y="384">Shard 1</text>
+            <circle cx="180" cy="350" r="8" fill="#5fd3f3"/><text x="180" y="384">Shard 2</text>
+            <circle cx="294" cy="350" r="8" fill="#5fd3f3"/><text x="294" y="384">Shard 3</text>
+            <g fill="#ffffff"><circle cx="30" cy="420" r="1.4"/><circle cx="130" cy="318" r="1.2"/><circle cx="240" cy="424" r="1.4"/><circle cx="336" cy="322" r="1.2"/></g>
+            <circle cx="320" cy="410" r="1.8" fill="#ffd27a"/><circle cx="110" cy="420" r="1.8" fill="#ff8c9a"/>
+          </g>
+          <text x="180" y="462" text-anchor="middle" fill="#46515f" font-size="14">Valkey cluster</text>
+        </g>
+      </svg>
+      <div>
+        <h2>One address, the whole cluster behind it</h2>
+        <p>Each command goes to the node that holds its keys, and redirects are followed. A multi-key command whose keys sit in different slots is split, sent to each node, and answered as one reply.</p>
+        <p>Clients see a standalone server: the same replies, over RESP2 or RESP3, checked byte for byte against real nodes and against Valkey's own test suite.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>What works</h2>
+      <p class="intro">Most applications see no difference from a standalone server.</p>
+      <div class="plate">
+        <dl class="features">
+          <div><dt>Cross-slot commands</dt><dd>MGET, MSET, DEL, UNLINK, EXISTS and TOUCH, which a cluster rejects with <code>CROSSSLOT</code> when their keys are in different slots, are split per slot and answered as one reply.</dd></div>
+          <div><dt>Multiple databases</dt><dd>SELECT per connection, on clusters with numbered databases: Valkey 9, including Amazon ElastiCache.</dd></div>
+          <div><dt>Transactions and WATCH</dt><dd>Atomic when a transaction's keys share a slot. SCAN covers the whole cluster.</dd></div>
+          <div><dt>Pub/Sub</dt><dd>Channels, patterns and sharded channels, with RESP2 and RESP3 clients.</dd></div>
+          <div><dt>Fast</dt><dd>Pipelines and concurrent clients' commands are batched to the cluster: 200–290k requests/s unpipelined and about 620k pipelined, measured on one 24-core machine.</dd></div>
+          <div><dt>Survives cluster changes</dt><dd>Slot migrations, new shards, failovers, and a seed DNS name pointed at another cluster.</dd></div>
+          <div><dt>Secure when you need it</dt><dd>Client passwords, TLS for clients, and TLS with credentials to the cluster. All off by default.</dd></div>
+          <div><dt>Observable</dt><dd>Health checks and Prometheus metrics on a separate port.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap pair">
+      <div>
+        <h2>Where it runs</h2>
+        <ul class="runs">
+          <li>Self-managed clusters</li>
+          <li>Amazon ElastiCache</li>
+          <li>Google Cloud Memorystore</li>
+        </ul>
+        <p>Releases come with signed build provenance and an SBOM, so you can check that an image or jar was built from this repository: see <a href="https://github.com/nslootsky/valkeyway/blob/main/docs/OPERATIONS.md#verifying-a-release">verifying a release</a>.</p>
+      </div>
+      <div>
+        <h2>What it can't change</h2>
+        <p>A cluster can't make one atomic operation out of keys in different hash slots, and neither can a proxy in front of it. A transaction across slots is rejected with <code>CROSSSLOT</code>, as on a cluster node, unless you set <code>proxy.transactions.cross-slot: pipeline</code>: its commands then run in order, without atomicity. Commands the proxy doesn't split, such as RENAME, SMOVE or SUNIONSTORE, need their keys in one slot too.</p>
+        <p>Hash tags, such as <code>{user1}:name</code> and <code>{user1}:email</code>, keep keys that are used together in one slot.</p>
+        <p>Commands that administer a single node, such as SHUTDOWN or CONFIG SET, are refused by default. The <a href="https://github.com/nslootsky/valkeyway/blob/main/docs/COMPATIBILITY.md">compatibility notes</a> list every difference from a standalone server.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>ValkeyWay is open source under the <a href="https://github.com/nslootsky/valkeyway/blob/main/LICENSE">MIT license</a>.</p>
+    <nav aria-label="Project">
+      <a href="https://github.com/nslootsky/valkeyway">GitHub</a>
+      <a href="https://github.com/nslootsky/valkeyway#documentation">Documentation</a>
+      <a href="https://github.com/nslootsky/valkeyway/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/nslootsky/valkeyway/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
