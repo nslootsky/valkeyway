@@ -92,8 +92,9 @@ jobs:
             org.opencontainers.image.version=${{ env.VERSION }}
             org.opencontainers.image.licenses=MIT
 
-      # Provenance: which workflow, commit and tag built them, signed and stored with GitHub (for the
-      # image also in the registry). Storage records need an organization-owned repository.
+      # Provenance: which workflow, commit and tag built them, signed and stored with GitHub, where
+      # gh attestation verify looks. Not pushed to the registry: ghcr.io has no referrers API, so it
+      # would appear as an extra sha256-<digest> tag, which the package page then offers to install.
       - name: Attest the jar
         uses: actions/attest@v4
         with:
@@ -104,8 +105,6 @@ jobs:
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/valkeyway
           subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
-          create-storage-record: false
 
       - name: Create the GitHub release
         env:
